@@ -15,7 +15,7 @@ Plan on about an hour for setup. Facebook/Instagram (step 6) can wait until late
 
 ---
 
-> **Already set up the first version?** Run `supabase/schema.sql` again in the SQL Editor; it's safe to re-run and adds the new due-date and request tables. Then add the email variables in step 3 and redeploy.
+> **Already set up an earlier version?** Run `supabase/schema.sql` again in the SQL Editor after every update; it's safe to re-run and adds anything new. Then add any new environment variables in step 3 and redeploy.
 
 ## 1. Create the Supabase project
 
@@ -120,13 +120,25 @@ Meta may ask you to complete **Business Verification** or **App Review** for the
 - If something fails, the reason shows on the destination and under **My work → Needs attention**. Fix the problem and click **Try again**.
 - Instagram needs at least one photo. Photos added in the app are converted to JPEG automatically, as Instagram requires. Multiple photos become a carousel (up to 10).
 
-## 7. Assignments and email reminders
+## 7. Assignments, auto-assign and email reminders
 
-Each destination has an **Assignment** box with **Assigned to** and **Due date**.
-- When you assign someone, they get an email right away with a link to the item. Assigning yourself doesn't send one.
-- If no due date is set, it defaults to 2 days before the publish date. You can change it.
-- At **7 AM Central** (8 AM during daylight saving time) on the due date, each person gets one email listing everything due that day that hasn't been posted.
-- **My work** is sorted by due date and shows overdue items in red.
+Each destination has an **Assigned to** person. **It's due on the day it's scheduled to go out**, so moving a destination to a new day moves its due date with it.
+- When someone is assigned, they get an email right away with a link to the item. Assigning yourself doesn't send one.
+- At **7 AM Central** (8 AM during daylight saving time) on the scheduled day, each person gets one email listing everything going out that day that hasn't been posted yet.
+- **My work** is each person's task list, sorted by due date, with overdue items marked in red.
+
+**Auto-assign:** in **Settings → Destinations**, set **Auto-assign to** for any destination type (for example Social goes to Sarah and the Weekly Update email goes to Brady).
+- Every new destination of that type is assigned to that person automatically, whether it's added with **Add destinations**, dragged onto the calendar, or created from a request. They get the task and the email.
+- In **Add destinations**, the owner is filled in for you. Change it, or pick **Unassigned**, before adding.
+- Request plans that aren't approved yet don't send assignment emails. They all go out the moment you approve, so nobody gets tasks for a request you might decline.
+- Changing an auto-assign setting only affects destinations created afterward. Existing assignments stay as they are.
+
+## One-off posts
+
+Not everything needs a campaign. On the **Calendar** page, click **+ One-off post**, or click **+ Add** on any day and choose **One-off post**.
+- A one-off post has its own **title** and **What's it about?** details, which the AI writer uses. It also has everything other destinations have: date, time, destination, owner, photos, copy, status, and Facebook/Instagram posting.
+- One-off posts show on the calendars in slate blue and appear in **My work**, assignment emails and morning reminders like any other item.
+- The **Campaign** dropdown on any destination moves it into a campaign, or out of one to make it a one-off.
 
 ## 8. Communication request form
 
@@ -139,14 +151,26 @@ Staff and ministry leaders request communications at **https://comms.fbss.church
   - which destinations they want (or "Not sure")
   - any files: posters, photos, PDFs, up to 15 files of 50 MB each
 - New requests appear under the **Requests** tab with a count badge, and admins get an email (or the addresses in `REQUEST_NOTIFY_EMAILS`).
-- **Approve** creates a campaign with the event details, files and requested destinations already filled in. It then emails the requester, with your message if you add one. **Decline** also emails them, if you leave that checked.
+- **Plan on calendar** creates a campaign from the request (event details, files and requested destinations) and opens its advertising calendar. Drag each destination to the day it should go out.
+  - Until you approve, the campaign shows as **Pending approval**, with striped chips on the calendars, and a banner at the top of the page.
+- **Approve & email** (on the banner or the request) shows the schedule. It then emails the requester a list of every destination with its date and time, plus your message if you add one.
+  - If you approve without planning first, a campaign is still created, with destinations 3 days before the event.
+- **Decline** emails them if you leave that checked, and can delete the planned campaign.
 - The form has a hidden spam trap. If spam ever becomes a problem, a CAPTCHA can be added.
 
-## 9. Destination icons
+## 9. Social destination (Facebook + Instagram together)
+
+The **Social (Facebook + Instagram)** destination posts one caption and the same photos to both platforms. Keep using separate Facebook and Instagram destinations when you want different posts on each.
+- If you set up an earlier version, go to **Settings → Destinations** and click **+ Add Social (Facebook + Instagram)**.
+- The drawer shows a Facebook preview and an Instagram preview side by side.
+- Before posting anything, Social checks both platforms' requirements: at least one photo, and a caption under 2,200 characters. That way it won't go out on just one platform because of a fixable problem.
+- If one platform fails anyway (say Instagram is down), the other stays posted. The error shows on the destination, and **Try again** retries only the platform that failed, so nothing is posted twice.
+
+## 10. Destination icons
 
 In **Settings → Destinations**, click any destination's icon to choose a new one. You can search thousands of free icons from **Lucide**, plus brand logos (YouTube, TikTok, Spotify and more) from **Simple Icons**. Icons load from the free Iconify service (api.iconify.design). If it's ever unreachable, the two-letter labels show instead.
 
-## 10. Invite your team
+## 11. Invite your team
 
 Go to **Settings → Team**, enter a name and email, and click **Send invite**. They get an email, click the link, choose a password, and they're in.
 

@@ -18,7 +18,7 @@ export default async (req) => {
   const [person] = await db(`profiles?id=eq.${d.assignee_id}&select=email,full_name`);
   const s = await db('app_settings?id=eq.1&select=data');
   const ch = ((s[0]?.data?.channels) || []).find((c) => c.id === d.channel_id) || { name: d.channel_id };
-  const camp = d.campaigns || {};
+  const camp = d.campaigns || { title: d.title || 'One-off post' };  // one-off posts have no campaign
   const by = user.profile?.full_name || user.email;
   try {
     await sendEmail({
@@ -29,8 +29,7 @@ export default async (req) => {
         heading: 'You have a new assignment',
         intro: `${by.replace(/</g, '&lt;')} assigned you the <strong>${String(ch.name).replace(/</g, '&lt;')}</strong> piece for <strong>${String(camp.title).replace(/</g, '&lt;')}</strong>.`,
         rows: [
-          ['Due', d.due_date ? fmtDate(d.due_date) : 'No due date set'],
-          ['Publishes', d.publish_date ? fmtDate(d.publish_date) + (d.publish_time ? ', ' + fmtTime(d.publish_time) : '') : ''],
+          ['Due', d.publish_date ? fmtDate(d.publish_date) + (d.publish_time ? ', ' + fmtTime(d.publish_time) : '') + ' (the day it goes out)' : 'Not scheduled yet'],
           ['Event', camp.start_date ? fmtDate(camp.start_date) : ''],
           ['Location', camp.location],
           ['Notes', d.notes],

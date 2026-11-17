@@ -205,3 +205,15 @@ create policy "staff delete requests" on public.requests for delete to authentic
 do $$ begin
   begin alter publication supabase_realtime add table public.requests; exception when duplicate_object then null; end;
 end $$;
+
+-- =====================================================================
+-- Update 3: "Social" destinations post to Facebook and Instagram; track each platform separately
+-- =====================================================================
+alter table public.destinations add column if not exists published_parts jsonb not null default '{}'::jsonb;
+
+-- =====================================================================
+-- Update 4: one-off posts (destinations that aren't part of a campaign)
+-- =====================================================================
+alter table public.destinations alter column campaign_id drop not null;
+alter table public.destinations add column if not exists title text not null default '';
+alter table public.destinations add column if not exists details text not null default '';

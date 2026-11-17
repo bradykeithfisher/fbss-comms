@@ -326,3 +326,14 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .hp{position:absolute;left:-5000px;width:1px;height:1px;overflow:hidden}
 .thanks{text-align:center;padding:30px 10px}
 .thanks h2{font-size:26px;text-transform:uppercase;letter-spacing:.1em;margin:14px 0 10px}
+
+/* ---------- planned (pending approval) campaigns ---------- */
+.chip.pending{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 10%,var(--surface)) 0 6px,var(--surface) 6px 12px);border-left-style:dashed}
+.evt.pending{background:repeating-linear-gradient(135deg,var(--c) 0 6px,color-mix(in srgb,var(--c) 75%,white) 6px 12px)}
+.planbanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;margin-bottom:16px;border:1px solid color-mix(in srgb,var(--rust) 35%,var(--line));border-left:4px solid var(--rust);border-radius:4px;background:color-mix(in srgb,var(--rust) 5%,var(--surface))}
+.preview{flex:1 1 240px}
+
+/* ---------- destination settings: auto-assign ---------- */
+.chanset{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}
+.ownerrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:44px}
+.ownerrow select.compact{min-width:150px}

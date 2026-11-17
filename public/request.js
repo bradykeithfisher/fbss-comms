@@ -1,8 +1,8 @@
 // Public communication request form (no login).
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
-const KIND_COLOR = { facebook:'#3E5C8A', instagram:'#94506B', email:'#5F7478', slides:'#6B6F57', bulletin:'#B47E3D', announcement:'#91412D', text:'#4F6B4A', web:'#414A55', other:'#7D7468' };
-const KIND_ICON = { facebook:'simple-icons:facebook', instagram:'simple-icons:instagram', email:'lucide:mail', slides:'lucide:presentation', bulletin:'lucide:newspaper', announcement:'lucide:megaphone', text:'lucide:message-square', web:'lucide:globe', other:'lucide:sparkles' };
+const KIND_COLOR = { social:'#5E5A7E', facebook:'#3E5C8A', instagram:'#94506B', email:'#5F7478', slides:'#6B6F57', bulletin:'#B47E3D', announcement:'#91412D', text:'#4F6B4A', web:'#414A55', other:'#7D7468' };
+const KIND_ICON = { social:'lucide:share-2', facebook:'simple-icons:facebook', instagram:'simple-icons:instagram', email:'lucide:mail', slides:'lucide:presentation', bulletin:'lucide:newspaper', announcement:'lucide:megaphone', text:'lucide:message-square', web:'lucide:globe', other:'lucide:sparkles' };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const iconUrl = (icon, color='#ffffff') => { const [p,n]=String(icon).split(':'); return `https://api.iconify.design/${encodeURIComponent(p)}/${encodeURIComponent(n)}.svg?color=${encodeURIComponent(color)}`; };
 const kb = ch => `<span class="kb" style="--k:${KIND_COLOR[ch.kind]||KIND_COLOR.other}"><img src="${esc(iconUrl(ch.icon||KIND_ICON[ch.kind]||KIND_ICON.other))}" alt="" onerror="this.remove()"><b>${esc((ch.name||'?').slice(0,2).toUpperCase())}</b></span>`;

@@ -41,60 +41,85 @@ export async function loadDestination(id) {
   return { d, camp: d.campaigns || {}, kind: ch.kind };
 }
 
-// Publishes one destination now. Returns { url }. Throws with a readable message.
+const LABEL = { facebook: 'Facebook', instagram: 'Instagram' };
+
+async function postFacebook(acct, text, images) {
+  const token = acct.page_token;
+  if (!images.length) {
+    const r = await graph(`${acct.page_id}/feed`, { message: text, access_token: token });
+    return `https://www.facebook.com/${r.id}`;
+  }
+  const params = { message: text, access_token: token };
+  for (let i = 0; i < images.length; i++) {
+    const p = await graph(`${acct.page_id}/photos`, { url: publicUrl(images[i]), published: 'false', access_token: token });
+    params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: p.id });
+  }
+  const r = await graph(`${acct.page_id}/feed`, params);
+  return `https://www.facebook.com/${r.id}`;
+}
+
+async function postInstagram(acct, text, images) {
+  const token = acct.page_token;
+  let containerId;
+  if (images.length === 1) {
+    containerId = (await graph(`${acct.ig_user_id}/media`, { image_url: publicUrl(images[0]), caption: text, access_token: token })).id;
+  } else {
+    const kids = [];
+    for (const p of images) {
+      const c = await graph(`${acct.ig_user_id}/media`, { image_url: publicUrl(p), is_carousel_item: 'true', access_token: token });
+      await waitReady(c.id, token);
+      kids.push(c.id);
+    }
+    containerId = (await graph(`${acct.ig_user_id}/media`, { media_type: 'CAROUSEL', children: kids.join(','), caption: text, access_token: token })).id;
+  }
+  await waitReady(containerId, token);
+  const pub = await graph(`${acct.ig_user_id}/media_publish`, { creation_id: containerId, access_token: token });
+  try { return (await graph(pub.id, { fields: 'permalink', access_token: token }, 'GET')).permalink || ''; } catch { return ''; }
+}
+
+// Publishes one destination now. "social" destinations go to Facebook and Instagram.
+// Each platform is recorded as it succeeds, so a retry never double-posts. Returns { url, parts }.
 export async function publishDestination(id) {
   const { d, camp, kind } = await loadDestination(id);
-  if (kind !== 'facebook' && kind !== 'instagram') throw new Error('Only Facebook and Instagram destinations can post automatically.');
+  const platforms = kind === 'social' ? ['facebook', 'instagram'] : (kind === 'facebook' || kind === 'instagram') ? [kind] : [];
+  if (!platforms.length) throw new Error('Only Facebook, Instagram and Social destinations can post automatically.');
   if (d.published_at) throw new Error('This was already posted.');
   const acct = await getAccount();
   if (!acct) throw new Error('Facebook and Instagram are not connected yet. An admin can connect them in Settings.');
-  const token = acct.page_token;
   const text = (d.copy || '').trim();
   const images = (d.image_paths && d.image_paths.length ? d.image_paths : (camp.cover_path ? [camp.cover_path] : [])).slice(0, 10);
-  let url = '';
+  const parts = { ...(d.published_parts || {}) };
+  const todo = platforms.filter((p) => !parts[p]);
 
-  if (kind === 'facebook') {
-    if (!text && !images.length) throw new Error('Add a caption or a photo first.');
-    if (!images.length) {
-      const r = await graph(`${acct.page_id}/feed`, { message: text, access_token: token });
-      url = `https://www.facebook.com/${r.id}`;
-    } else {
-      const params = { message: text, access_token: token };
-      for (let i = 0; i < images.length; i++) {
-        const p = await graph(`${acct.page_id}/photos`, { url: publicUrl(images[i]), published: 'false', access_token: token });
-        params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: p.id });
-      }
-      const r = await graph(`${acct.page_id}/feed`, params);
-      url = `https://www.facebook.com/${r.id}`;
-    }
-  } else {
+  // Check everything first so a Social post never goes out on only one platform because of a fixable problem.
+  if (todo.includes('facebook') && !text && !images.length) throw new Error('Add a caption or a photo first.');
+  if (todo.includes('instagram')) {
     if (!acct.ig_user_id) throw new Error('No Instagram professional account is linked to the connected Facebook Page.');
     if (!images.length) throw new Error('Instagram posts need at least one photo.');
     if (text.length > 2200) throw new Error('Instagram captions must be 2,200 characters or fewer.');
-    const bad = images.find((p) => !/\.jpe?g$/i.test(p));
-    if (bad) throw new Error('Instagram only accepts JPEG photos. Re-add the photo in this app (it converts photos to JPEG automatically).');
-    let containerId;
-    if (images.length === 1) {
-      containerId = (await graph(`${acct.ig_user_id}/media`, { image_url: publicUrl(images[0]), caption: text, access_token: token })).id;
-    } else {
-      const kids = [];
-      for (const p of images) {
-        const c = await graph(`${acct.ig_user_id}/media`, { image_url: publicUrl(p), is_carousel_item: 'true', access_token: token });
-        await waitReady(c.id, token);
-        kids.push(c.id);
-      }
-      containerId = (await graph(`${acct.ig_user_id}/media`, { media_type: 'CAROUSEL', children: kids.join(','), caption: text, access_token: token })).id;
-    }
-    await waitReady(containerId, token);
-    const pub = await graph(`${acct.ig_user_id}/media_publish`, { creation_id: containerId, access_token: token });
-    try { url = (await graph(pub.id, { fields: 'permalink', access_token: token }, 'GET')).permalink || ''; } catch { url = ''; }
+    if (images.find((p) => !/\.jpe?g$/i.test(p))) throw new Error('Instagram only accepts JPEG photos. Re-add the photo in this app (it converts photos to JPEG automatically).');
   }
 
+  const errors = [];
+  for (const p of todo) {
+    try {
+      const url = p === 'facebook' ? await postFacebook(acct, text, images) : await postInstagram(acct, text, images);
+      parts[p] = { url, at: new Date().toISOString() };
+      await db(`destinations?id=eq.${d.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { published_parts: parts } });
+    } catch (e) {
+      errors.push(`${LABEL[p]}: ${e.message}`);
+    }
+  }
+  if (errors.length) {
+    const done = platforms.filter((p) => parts[p]).map((p) => LABEL[p]);
+    throw new Error((done.length ? `Posted to ${done.join(' and ')}, but ` : '') + errors.join(' '));
+  }
+  const url = (parts.facebook && parts.facebook.url) || (parts.instagram && parts.instagram.url) || '';
   await db(`destinations?id=eq.${d.id}`, {
     method: 'PATCH', prefer: 'return=minimal',
-    body: { status: 'posted', published_at: new Date().toISOString(), external_url: url, publish_error: '', publish_lock: null },
+    body: { status: 'posted', published_at: new Date().toISOString(), external_url: url, publish_error: '', publish_lock: null, published_parts: parts },
   });
-  return { url };
+  return { url, parts };
 }
 
 export async function recordFailure(id, message) {
