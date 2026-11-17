@@ -152,14 +152,23 @@ const saveSettings = delay => delay ? scheduleSave('s:1',delay) : writeKey('s:1'
 const removeDest = id => { const d=S.dests[id]; const c=d&&d.campaignId&&S.campaigns[d.campaignId]; delete S.dests[id]; if(!(c&&c._draft)) writeKey('d:'+id); };
 const removeCampaign = id => { for(const d of destsOf(id)) delete S.dests[d.id]; delete S.campaigns[id]; writeKey('c:'+id); };
 
-async function notifyAssigned(id, quiet){
-  for(let i=0;i<50 && (dirty['d:'+id]||inflight['d:'+id]);i++) await new Promise(r=>setTimeout(r,150)); // wait for the save to land
-  try{ const r=await api('notify-assigned',{id}); if(r.ok && !quiet){ const d=S.dests[id]; const m=d&&memberById(d.assigneeId); toast(`Emailed ${m?m.name:'them'} about the assignment`); } return !!r.ok; }
-  catch(e){ if(!quiet) toast('Assignment saved, but the email failed: '+e.message); return false; }
+// Assignment emails go out one per person per campaign. Single assignment changes wait a few seconds
+// so several made together (e.g. assigning a whole campaign) arrive as one email.
+const notifyQueue=new Set(); let notifyTimer=null;
+function notifyAssigned(id){ notifyQueue.add(id); clearTimeout(notifyTimer); notifyTimer=setTimeout(flushAssignedEmails, 6000); }
+async function flushAssignedEmails(){
+  const ids=[...notifyQueue]; notifyQueue.clear(); if(!ids.length) return;
+  await waitForSaves();
+  try{ const r=await api('notify-assigned',{ids});
+    if(r.emails){ const names=[...new Set(ids.map(id=>S.dests[id]).filter(d=>d&&d.assigneeId).map(d=>(memberById(d.assigneeId)||{}).name).filter(Boolean))];
+      toast(`Emailed ${names.length===1?names[0]:names.length?names.length+' people':'them'} about ${r.pieces===1?'the assignment':r.pieces+' assignments'}`); } }
+  catch(e){ toast('Assignments saved, but the email failed: '+e.message); }
 }
-// Assignment emails for a whole campaign at once (used when a planned request is approved).
+window.addEventListener('pagehide', ()=>{ if(notifyQueue.size) flushAssignedEmails(); });
+// Assignment emails for a whole campaign at once (when it's approved or created by an admin). Returns how many emails went out.
 async function notifyCampaignAssignments(cid){
-  let n=0; for(const d of destsOf(cid)) if(d.assigneeId && await notifyAssigned(d.id,true)) n++; return n;
+  await waitForSaves();
+  try{ const r=await api('notify-assigned',{campaignId:cid}); return r.emails||0; }catch(e){ return 0; }
 }
 
 /* ---------- server calls ---------- */
