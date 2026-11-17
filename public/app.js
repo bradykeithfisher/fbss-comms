@@ -23,6 +23,8 @@ const WORDS = {
   email:[[30,50],[60,100],[110,160]], bulletin:[[20,35],[35,60],[60,90]], announcement:[[35,55],[70,100],[110,140]],
   web:[[40,60],[70,110],[120,180]], other:[[20,40],[45,80],[90,130]],
 };
+// Words in a post, not counting hashtags or emoji on their own.
+const wordCount = t => String(t||'').split(/\s+/).filter(w=>/[A-Za-z0-9]/.test(w) && !w.startsWith('#')).length;
 const lenRange = (kind, len) => { const w=WORDS[kind]; return w ? w[{short:0,medium:1,long:2}[len]??1] : null; };
 const GUIDE = {
   social:'One caption posted to BOTH Facebook and Instagram. Strong first line, short lines with line breaks, details (date, time, place) easy to spot. Links are not clickable on Instagram, so if there is a sign-up link say where to find it instead of pasting a long URL.',
@@ -1502,7 +1504,7 @@ Destination: ${ch.name} (${k.label})
 Format guidance: ${GUIDE[ch.kind]||GUIDE.other}
 Timing: ${timing}
 Tone: ${tones[a.tone]||tones.voice}
-${lenRange(ch.kind,a.length)?`LENGTH (follow strictly): each option's text must be ${lenRange(ch.kind,a.length)[0]} to ${lenRange(ch.kind,a.length)[1]} words, counting every word including the date, time and place. Do not go over ${lenRange(ch.kind,a.length)[1]} words.`:''}
+${lenRange(ch.kind,a.length)?`LENGTH (follow strictly): each option's text must be ${lenRange(ch.kind,a.length)[0]} to ${lenRange(ch.kind,a.length)[1]} words, counting every word including the date, time and place. Do not go over ${lenRange(ch.kind,a.length)[1]} words.${a.length==='short'?' Because this is short, include only the essentials: what it is, when, where, and one call to action. Leave out every other detail (lists, prices, deadlines, who to ask), even though they are in the details above.':a.length==='medium'?' Include only the most important details; you do not need to use them all.':''}`:''}
 Emoji: ${a.emoji==='none'?'Do not use emoji.':a.emoji==='more'?'Use several emoji where natural.':'At most one or two emoji.'}
 ${k.social?(a.hashtags==='on'?'Hashtags: add 2-4 relevant hashtags on the last line.':'Hashtags: none.'):''}
 ${k.limit?`Hard limit: the text must be under ${k.limit} characters.`:''}
@@ -1517,6 +1519,17 @@ Give two clearly different options. "headline" is the ${k.head||'headline'}${k.h
     const r=await api('ai-copy',{prompt}); const m=(r.text||'').match(/\{[\s\S]*\}/); const parsed=m?JSON.parse(m[0]):null;
     const opts=parsed&&Array.isArray(parsed.options)?parsed.options.filter(o=>o&&typeof o.text==='string').slice(0,2).map(o=>({headline:String(o.headline||''), text:o.text.trim()})):[];
     if(!opts.length) throw new Error('The AI response came back in an unexpected format. Click Regenerate.');
+    // Check the length ourselves; if an option runs long, ask for it to be cut down (up to twice).
+    const range=lenRange(ch.kind,a.length);
+    for(let tries=0; range && tries<2; tries++){
+      const long=opts.filter(o=>wordCount(o.text)>range[1]); if(!long.length) break;
+      const fix=`Shorten each text below to ${range[0]} to ${range[1]} words (counting every word, hashtags not included). Keep the date, time, place and one call to action; cut everything else that doesn't fit. Keep the same voice${k.social&&a.hashtags==='on'?' and keep the hashtags line':''}. Plain text.
+Return ONLY a JSON object: {"options":[{"text":"..."}]} with the texts in the same order. Use \\n for line breaks.
+${long.map((o,i)=>`Text ${i+1}:\n${o.text}`).join('\n\n')}`;
+      const r2=await api('ai-copy',{prompt:fix}); const m2=(r2.text||'').match(/\{[\s\S]*\}/); const p2=m2?JSON.parse(m2[0]):null;
+      const short=p2&&Array.isArray(p2.options)?p2.options:[];
+      long.forEach((o,i)=>{ const t=short[i]&&typeof short[i].text==='string'&&short[i].text.trim(); if(t) o.text=t; });
+    }
     a.options=opts;
   }catch(err){ a.error=err.message||'Could not generate copy. Try again.'; }
   a.loading=false; render(true);
