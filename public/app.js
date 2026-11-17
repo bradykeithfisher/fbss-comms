@@ -669,7 +669,7 @@ function renderDrawer(){
     ${k.head?`<div class="field"><label class="lbl" for="d-head-${id}">${k.head}</label><input type="text" id="d-head-${id}" data-bind="dest:headline" data-id="${id}" value="${esc(d.headline)}"></div>`:''}
     <div class="field">
       <div class="copyhead"><label class="lbl" for="d-copy-${id}" style="margin:0">${ch.kind==='announcement'?'Script':k.social?'Caption':'Copy'}</label><span class="counter ${k.limit&&len>k.limit?'over':''}" id="cnt-${id}">${len}${k.limit?' / '+k.limit:''} characters</span><span class="spacer"></span>
-        <button class="btn sm" data-action="copy-text" data-id="${id}">Copy</button>${CFG&&CFG.aiEnabled?`<button class="btn gold sm" data-action="ai-toggle" data-id="${id}">✦ Write with AI</button>`:''}</div>
+        ${d.campaignId&&(S.campaigns[d.campaignId]||{}).description?`<button class="btn sm" data-action="use-desc" data-id="${id}" title="Fill this with the campaign's description">Use campaign description</button>`:''}<button class="btn sm" data-action="copy-text" data-id="${id}">Copy</button>${CFG&&CFG.aiEnabled?`<button class="btn gold sm" data-action="ai-toggle" data-id="${id}">✦ Write with AI</button>`:''}</div>
       <textarea id="d-copy-${id}" data-bind="dest:copy" data-id="${id}" rows="8" placeholder="Write the ${esc(k.label.toLowerCase())} copy, or use Write with AI.">${esc(d.copy)}</textarea>
     </div>
     ${a.open?renderAI(d,a,k):''}
@@ -944,6 +944,10 @@ const A = {
   'copy-text'(el){ const d=S.dests[el.dataset.id]; const k=kindOf(channelById(d.channelId)); const t=(k.head&&d.headline? d.headline+'\n\n':'')+(d.copy||''); if(!t.trim()){ toast('Nothing to copy yet'); return; } copyText(k.social?(d.copy||''):t); },
   'ai-toggle'(el){ const a=aiState(el.dataset.id); a.open=!a.open; render(true); },
   'ai-generate'(el){ generate(el.dataset.id); },
+  'use-desc'(el){ const d=S.dests[el.dataset.id], c=d&&S.campaigns[d.campaignId]; const t=((c&&c.description)||'').trim(); if(!t){ toast('This campaign has no description yet'); return; }
+    const apply=()=>{ d.copy=t; saveDest(d); render(true); toast('Campaign description added'); };
+    if((d.copy||'').trim() && d.copy.trim()!==t) confirmBox('Replace the current copy?', 'This swaps what\'s written here for the campaign\'s description.', apply, 'Replace');
+    else apply(); },
   'ai-use'(el){ const d=S.dests[el.dataset.id], a=aiState(d.id), o=a.options[+el.dataset.i]; if(!o) return; const k=kindOf(channelById(d.channelId)); d.copy=o.text; if(k.head&&o.headline) d.headline=o.headline; if(isSocialDest(d) && st(d)==='draft') d.status='review'; saveDest(d); a.open=false; a.options=[]; render(true); toast(isSocialDest(d)?'Copy added and marked In review':'Copy added'); },
   async 'post-now'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const ch=channelById(d.channelId);
     confirmBox(`Post to ${ch.kind==='social'?'Facebook and Instagram':kindOf(ch).label} now?`, 'This publishes the caption and photos to the church\'s page right away.', async ()=>{
