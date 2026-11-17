@@ -315,3 +315,8 @@ alter table public.graphics_jobs add constraint graphics_jobs_status_check check
 -- =====================================================================
 alter table public.graphics_jobs drop constraint if exists graphics_jobs_kind_check;
 alter table public.graphics_jobs add constraint graphics_jobs_kind_check check (kind in ('concept','title','background','poster','wide','social'));
+
+-- =====================================================================
+-- Update 12: things to advertise without an event date (like an offering). Requests can say when to stop promoting.
+-- =====================================================================
+alter table public.requests add column if not exists promo_end date;

@@ -36,7 +36,7 @@ function render(){
     </fieldset>
     <fieldset><legend>Event</legend>
       <div class="field"><label class="lbl" for="r-title">Event name</label><input type="text" id="r-title" required></div>
-      <div class="req2"><div class="field"><label class="lbl" for="r-sd">Start date</label><input type="date" id="r-sd" required></div>
+      <div class="req2"><div class="field"><label class="lbl" for="r-sd">Start date <span class="opt">leave empty if it's not a dated event, like an offering</span></label><input type="date" id="r-sd"></div>
       <div class="field"><label class="lbl" for="r-ed">End date <span class="opt">if more than one day</span></label><input type="date" id="r-ed"></div></div>
       <div class="req2"><div class="field"><label class="lbl" for="r-st">Start time</label><input type="time" id="r-st"></div>
       <div class="field"><label class="lbl" for="r-et">End time</label><input type="time" id="r-et"></div></div>
@@ -47,8 +47,9 @@ function render(){
       <div class="field"><span class="lbl">Where would you like this promoted?</span>
         <div class="chpick">${channels.map(c=>`<label><input type="checkbox" name="ch" value="${esc(c.id)}">${kb(c)}<span>${esc(c.name)}</span></label>`).join('')}
         <label><input type="checkbox" id="r-notsure"><span class="kb" style="--k:#7D7468"><img src="${esc(iconUrl('lucide:circle-help'))}" alt="" onerror="this.remove()"><b>?</b></span><span>Not sure. Let the team decide</span></label></div></div>
-      <div class="req2"><div class="field"><label class="lbl" for="r-promo">When would you like to start promoting this event?</label><input type="date" id="r-promo" required></div>
-      <div class="field"><span class="lbl" id="r-gfx-l" tabindex="-1">Do you need graphics designed for this event?</span>
+      <div class="req2"><div class="field"><label class="lbl" for="r-promo">When would you like to start promoting this?</label><input type="date" id="r-promo" required></div>
+      <div class="field"><label class="lbl" for="r-promo-end">Promote until <span class="opt">needed if there's no event date</span></label><input type="date" id="r-promo-end"></div>
+      <div class="field"><span class="lbl" id="r-gfx-l" tabindex="-1">Do you need graphics designed for this?</span>
         <div class="chpick" role="radiogroup" aria-labelledby="r-gfx-l" style="grid-template-columns:1fr 1fr"><label><input type="radio" name="gfx" value="yes"><span>Yes</span></label><label><input type="radio" name="gfx" value="no"><span>No, I have them</span></label></div></div></div>
     </fieldset>
     <fieldset><legend>Files <span class="opt" style="font-family:var(--f-ui)">optional</span></legend>
@@ -91,11 +92,12 @@ async function submit(e){
   const err=document.getElementById('formerr'); err.textContent='';
   const channelIds=[...document.querySelectorAll('input[name=ch]:checked')].map(x=>x.value), notSure=document.getElementById('r-notsure').checked;
   const data={ name:v('r-name'), email:v('r-email'), ministry:v('r-ministry'), phone:v('r-phone'), title:v('r-title'), startDate:v('r-sd'), endDate:v('r-ed'), startTime:v('r-st'), endTime:v('r-et'),
-    location:v('r-loc'), description:v('r-desc'), channelIds, notSure, promoStart:v('r-promo'), graphics:(document.querySelector('input[name=gfx]:checked')||{}).value||'', website:v('r-website') };
-  const missing=[[!data.name,'your name','r-name'],[!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email),'a valid email','r-email'],[!data.title,'the event name','r-title'],[!data.startDate,'the start date','r-sd'],[!data.description,'a description','r-desc'],[!data.promoStart,'when to start promoting','r-promo'],[!data.graphics,'whether you need graphics','r-gfx-l']].filter(x=>x[0]);
+    location:v('r-loc'), description:v('r-desc'), channelIds, notSure, promoStart:v('r-promo'), promoEnd:v('r-promo-end'), graphics:(document.querySelector('input[name=gfx]:checked')||{}).value||'', website:v('r-website') };
+  const missing=[[!data.name,'your name','r-name'],[!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email),'a valid email','r-email'],[!data.title,'the event name','r-title'],[!data.startDate&&!data.promoEnd,'a start date (or, if there isn\'t an event date, when to stop promoting)','r-promo-end'],[!data.description,'a description','r-desc'],[!data.promoStart,'when to start promoting','r-promo'],[!data.graphics,'whether you need graphics','r-gfx-l']].filter(x=>x[0]);
   if(missing.length){ err.textContent='Please add '+missing.map(m=>m[1]).join(', ')+'.'; document.getElementById(missing[0][2]).focus(); return; }
-  if(data.endDate && data.endDate<data.startDate){ err.textContent='The end date is before the start date.'; return; }
-  if(data.promoStart && data.promoStart>data.startDate){ err.textContent='Promotion needs to start on or before the event start date.'; return; }
+  if(data.endDate && data.startDate && data.endDate<data.startDate){ err.textContent='The end date is before the start date.'; return; }
+  if(data.promoEnd && data.promoStart && data.promoEnd<data.promoStart){ err.textContent='Promote until is before the promotion start date.'; return; }
+  if(data.promoStart && data.startDate && data.promoStart>data.startDate){ err.textContent='Promotion needs to start on or before the event start date.'; return; }
   if(!channelIds.length && !notSure){ err.textContent='Choose at least one place to promote this, or "Not sure".'; return; }
   busy=true; const btn=document.getElementById('send'); btn.disabled=true; btn.textContent=files.length?'Uploading files…':'Sending…'; drawFiles();
   const submissionId=uuid(); const uploaded=[];

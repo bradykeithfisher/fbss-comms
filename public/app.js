@@ -73,7 +73,7 @@ const initials = n => (String(n||'').trim().split(/\s+/).map(w=>w[0]).filter(Boo
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
 function eventDays(c){ const a=parseYmd(c.date); if(!a) return []; let b=parseYmd(c.endDate)||a; if(b<a) b=a; const out=[]; for(let d=a,i=0; d<=b && i<62; d=addDays(d,1),i++) out.push(ymd(d)); return out; }
 function fmtRange(c,long){ const o=long?{weekday:'long',month:'long',day:'numeric',year:'numeric'}:{weekday:'short',month:'short',day:'numeric'};
-  if(!c.date) return 'No date set'; const t1=fmtT(c.time), t2=fmtT(c.endTime);
+  if(!c.date) return c.adStart&&c.adEnd ? `Advertised ${fmtD(c.adStart,{month:'short',day:'numeric'})} – ${fmtD(c.adEnd,{month:'short',day:'numeric'})}` : 'No event date'; const t1=fmtT(c.time), t2=fmtT(c.endTime);
   if(!c.endDate || c.endDate<=c.date) return fmtD(c.date,o)+(t1?' · '+t1+(t2?' – '+t2:''):'');
   return `${fmtD(c.date,o)}${t1?', '+t1:''} – ${fmtD(c.endDate,o)}${t2?', '+t2:''}`; }
 const fileKind = f => (f.type||'').startsWith('image/') ? 'image' : (f.type==='application/pdf' ? 'PDF' : (f.type||'').startsWith('video/') ? 'VIDEO' : ((f.name||'').split('.').pop()||'FILE').toUpperCase().slice(0,4));
@@ -415,8 +415,8 @@ function campCard(c){
 }
 function renderCampaigns(){
   const all=Object.values(S.campaigns).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  const t=todayStr(); const endOf=c=>(c.endDate&&c.endDate>c.date?c.endDate:c.date);
-  const up=all.filter(c=>!c.date||endOf(c)>=t), past=all.filter(c=>c.date&&endOf(c)<t).reverse();
+  const t=todayStr(); const endOf=c=>(c.date ? (c.endDate&&c.endDate>c.date?c.endDate:c.date) : (c.adEnd||''));
+  const up=all.filter(c=>!endOf(c)||endOf(c)>=t), past=all.filter(c=>endOf(c)&&endOf(c)<t).reverse();
   let h=`<div class="pagehead"><h1>Campaigns</h1><button class="btn primary" data-action="new-campaign">+ New campaign</button></div>`;
   if(!all.length) return h+`<div class="empty"><img src="/assets/mark-color.svg" alt="">No campaigns yet. Start one for your next event, sermon series or ministry push.</div>`;
   h+=`<div class="sectionlabel">Upcoming · ${up.length}</div>`+(up.length?`<div class="cards">${up.map(campCard).join('')}</div>`:`<div class="empty">Nothing upcoming.</div>`);
@@ -478,6 +478,7 @@ function renderCampaign(id){
     <section class="panel stack" aria-label="Event details">
       <div class="field"><label class="lbl" for="c-title">Campaign</label><input type="text" id="c-title" class="titleinput" data-bind="camp:title" data-id="${I}" value="${esc(c.title)}" placeholder="Campaign name"></div>
       <div class="grid2">${inp('date','Start date','date')}${inp('time','Start time','time')}${inp('endDate','End date','date','',`min="${esc(c.date||'')}"`)}${inp('endTime','End time','time')}</div>
+      ${c.date?'':'<span class="small muted" style="margin-top:-8px">No event date? For things like an offering, leave the dates empty and set Advertise from and until below.</span>'}
       ${inp('location','Location','text','e.g. Worship Center, The ROC')}
       <div class="field"><label class="lbl" for="c-description">Description</label><textarea id="c-description" data-bind="camp:description" data-id="${I}" placeholder="What is it, who is it for, how do people sign up? The AI writer uses this.">${esc(c.description||'')}</textarea></div>
       <div class="grid2">${inp('adStart','Advertise from','date')}${inp('adEnd','Advertise until','date','',`min="${esc(c.adStart||'')}"`)}</div>
@@ -570,6 +571,7 @@ function renderRequests(){
         <dt>Description</dt><dd>${esc(sel.description)}</dd>
         <dt>Destinations</dt><dd style="white-space:normal"><div class="chlist">${chs.map(c=>`<span class="chtag">${kb(c)}${esc(c.name)}</span>`).join('')}${sel.not_sure?'<span class="chtag" style="padding-left:10px">Not sure: team decides</span>':''}</div></dd>
         ${sel.promo_start?`<dt>Start promoting</dt><dd>${esc(fmtD(sel.promo_start,{weekday:'long',month:'short',day:'numeric'}))}</dd>`:''}
+        ${sel.promo_end?`<dt>Promote until</dt><dd>${esc(fmtD(sel.promo_end,{weekday:'long',month:'short',day:'numeric'}))}</dd>`:''}
         ${sel.needs_graphics?`<dt>Graphics</dt><dd>${sel.needs_graphics==='yes'?'<strong>Yes, needs graphics designed</strong>':'No, they have their own'}</dd>`:''}
         <dt>Files</dt><dd style="white-space:normal">${files.length?`<div class="files">${files.map(f=>{ const k=fileKind(f), img=k==='image'; return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a><div class="fprev" style="${img?`background-image:url('${esc(fileUrl(f.path))}')`:''}">${img?'':esc(k)}</div><div class="fname">${esc(f.name)}</div></div>`; }).join('')}</div>`:'<span class="muted">None</span>'}</dd>
         <dt>Received</dt><dd>${esc(new Date(sel.created_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</dd>
@@ -588,7 +590,9 @@ function renderPlanSummary(r, camp){
   return `<div class="field"><span class="lbl">Planned schedule (goes in the approval email)</span>${ds.length?`<div class="dlist">${ds.map(d=>{ const ch=channelById(d.channelId); return `<button class="drow" style="grid-template-columns:auto 1fr auto" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch)}<div class="nm">${esc(ch.name)}</div><div class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${timeTxt(d)}</div></button>`; }).join('')}</div>`:'<div class="muted small">No destinations planned yet.</div>'}</div>`;
 }
 function createCampaignFromRequest(r, opts={}){
-  const start=r.start_date||ymd(addDays(new Date(),21)); const adEnd=r.end_date&&r.end_date>start?r.end_date:start;
+  // No event date (e.g. an offering): advertise from the requested start until the requested end.
+  const pStart=r.promo_start&&r.promo_start>todayStr()?r.promo_start:todayStr();
+  const start=r.start_date||r.promo_end||ymd(addDays(parseYmd(pStart),30)); const adEnd=r.start_date?(r.end_date&&r.end_date>start?r.end_date:start):start;
   const c={id:uid(), title:r.title, date:r.start_date||'', endDate:r.end_date||r.start_date||'', time:t5(r.start_time), endTime:t5(r.end_time), adStart:(r.promo_start&&r.promo_start<=start?(r.promo_start<todayStr()?todayStr():r.promo_start):(todayStr()<start?todayStr():start)), adEnd,
     location:r.location||'', description:r.description||'', ministry:r.ministry||r.requester_name, link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'',
     files:(r.files||[]).map(f=>({path:f.path, name:f.name, type:f.type, size:f.size, at:Date.now()})), status:'pending'};
@@ -912,7 +916,7 @@ const A = {
   'change-pw'(){ V.modal={type:'change-pw'}; render(true); },
   async 'submit-campaign'(el){ const c=S.campaigns[el.dataset.id]; if(!c||!c._draft) return;
     if(!c.title.trim()){ toast('Give the campaign a name first.'); const t=document.getElementById('c-title'); if(t) t.focus(); return; }
-    if(!c.date){ toast('Add a start date first.'); const t=document.getElementById('c-date'); if(t) t.focus(); return; }
+    if(!c.date && !(c.adStart && c.adEnd)){ toast('Add an event date, or (for things like an offering) the Advertise from and until dates.'); const t=document.getElementById(c.adStart?'c-adEnd':'c-date'); if(t) t.focus(); return; }
     V.busy=true; render(true);
     delete c._draft; c.status = isAdmin() ? 'approved' : 'pending';
     writeKey('c:'+c.id); await waitForSaves();
