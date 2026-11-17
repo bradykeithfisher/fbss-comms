@@ -351,6 +351,7 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
    Phones and small tablets
    ===================================================================== */
 .ti{display:none;width:22px;height:22px;flex:none}
+.bottomtabs{display:none}
 .narrow-only,.touch-only{display:none}
 .topbar{padding-top:max(12px,env(safe-area-inset-top))}
 
@@ -387,12 +388,18 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
   .newbtn{width:40px;height:40px;padding:0;font-size:22px;letter-spacing:0;border-radius:50%}
   .usermenu .nm{display:none}
   .usermenu .btn{padding:4px 6px}
-  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--cream);border-top:1px solid var(--line-2);display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:4px 2px max(6px,env(safe-area-inset-bottom));box-shadow:0 -4px 18px rgba(46,52,60,.08)}
+  .toptabs{display:none!important}
+  .tabs{position:static;flex:none;z-index:30;background:var(--cream);border-top:1px solid var(--line-2);display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:4px 2px max(6px,env(safe-area-inset-bottom));box-shadow:0 -4px 18px rgba(46,52,60,.08)}
   .tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 2px;font-size:10px;letter-spacing:.06em;border-bottom:0;position:relative;min-height:50px;justify-content:center}
   .tabs a.on{border-bottom:0;color:var(--rust)}
   .tabs .ti{display:block}
   .tabs a .count{position:absolute;top:2px;left:calc(50% + 6px);margin:0;min-width:17px;height:17px;font-size:10px}
-  main{padding:16px 14px calc(90px + env(safe-area-inset-bottom))}
+  /* Phone layout: header and tab bar stay put; only the page in between scrolls.
+     (Pinning the bar with position:fixed gets misplaced on iPhones after the keyboard closes.) */
+  html:has(#app.shell),html:has(#app.shell) body{height:100%;overflow:hidden}
+  #app.shell{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  #app.shell > .topbar{position:relative;flex:none}
+  #app.shell > main{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding:16px 14px 28px}
   .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
 
   .pagehead h1{font-size:23px}

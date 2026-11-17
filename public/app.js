@@ -245,23 +245,26 @@ function route(){
   else if(['calendar','campaigns','my-work','settings','requests'].includes(h)) V.view=h;
   else V.view='calendar';
 }
-window.addEventListener('hashchange', ()=>{ if(V.screen!=='app') return; V.openDest=null; route(); render(true); window.scrollTo(0,0); });
+window.addEventListener('hashchange', ()=>{ if(V.screen!=='app') return; V.openDest=null; V.resetScroll=true; route(); render(true); window.scrollTo(0,0); });
 
 /* ---------- render core ---------- */
 let pendingRender=false;
 function isTyping(){ const a=document.activeElement; return !!a && (a.tagName==='TEXTAREA' || a.tagName==='INPUT' || a.tagName==='SELECT'); }
-document.addEventListener('focusout', ()=> setTimeout(()=>{ if(pendingRender && !isTyping()) render(); }, 60));
+document.addEventListener('focusout', ()=> setTimeout(()=>{ if(pendingRender && !isTyping()) render(); if(!isTyping() && window.scrollY && document.getElementById('app').classList.contains('shell') && window.matchMedia('(max-width: 760px)').matches) window.scrollTo(0,0); }, 60));
 function render(force){
   if(V.dragging || (!force && isTyping())){ pendingRender=true; return; }
   pendingRender=false;
   const app=document.getElementById('app'), ov=document.getElementById('overlay');
-  if(V.screen==='login'||V.screen==='setpw'){ app.innerHTML=renderAuth(); ov.innerHTML=''; return; }
+  if(V.screen==='login'||V.screen==='setpw'){ app.className=''; app.innerHTML=renderAuth(); ov.innerHTML=''; return; }
   if(V.screen!=='app') return;
   const ae=document.activeElement, fid=ae && ae.id; let sel=null;
   try{ if(fid && typeof ae.selectionStart==='number') sel=[ae.selectionStart, ae.selectionEnd]; }catch(e){}
   const drw=document.querySelector('.drawer'), dScroll=drw?drw.scrollTop:0;
   const mdl=document.querySelector('.modal'), mScroll=mdl?mdl.scrollTop:0;
-  app.innerHTML = renderHeader() + `<main>${renderView()}</main>`;
+  const mn=app.querySelector('main'), mainScroll=(mn&&!V.resetScroll)?mn.scrollTop:0; V.resetScroll=false;
+  app.className='shell';
+  app.innerHTML = renderHeader() + `<main>${renderView()}</main>` + renderBottomTabs();
+  const mn2=app.querySelector('main'); if(mn2&&mainScroll) mn2.scrollTop=mainScroll;
   ov.innerHTML = renderDrawer() + renderModal();
   const d2=document.querySelector('.drawer'); if(d2) d2.scrollTop=dScroll;
   const m2=document.querySelector('.modal'); if(m2) m2.scrollTop=mScroll;
@@ -307,12 +310,15 @@ const TAB_ICONS = {
   'inbox':'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   'settings':'<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>'
 };
+let navLinks=()=>'';
+function renderBottomTabs(){ return `<nav class="tabs bottomtabs" aria-label="Main">${navLinks()}</nav>`; }
 function renderHeader(){
   const ti=n=>`<svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS[n]||''}</svg>`;
   const tab=(h,l,on,icon)=>`<a href="#${h}" class="${on?'on':''}">${ti(icon)}<span>${l}</span></a>`; const m=me();
+  navLinks=()=>`${tab('calendar','Calendar',V.view==='calendar','calendar-days')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign','layers')}${tab('my-work','My work',V.view==='my-work','list-checks')}<a href="#requests" class="${V.view==='requests'?'on':''}">${ti('inbox')}<span>Approvals</span>${(()=>{ const n=Object.values(S.requests).filter(r=>r.status==='new').length + pendingCampaigns().length; return n?`<span class="count">${n}</span>`:''; })()}</a>${tab('settings','Settings',V.view==='settings','settings')}`;
   return `<header class="topbar">
     <a href="#calendar" aria-label="Calendar home"><img class="logo" src="/assets/logo-horizontal.svg" alt="First Baptist Sulphur Springs"></a>
-    <nav class="tabs" aria-label="Main">${tab('calendar','Calendar',V.view==='calendar','calendar-days')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign','layers')}${tab('my-work','My work',V.view==='my-work','list-checks')}<a href="#requests" class="${V.view==='requests'?'on':''}">${ti('inbox')}<span>Approvals</span>${(()=>{ const n=Object.values(S.requests).filter(r=>r.status==='new').length + pendingCampaigns().length; return n?`<span class="count">${n}</span>`:''; })()}</a>${tab('settings','Settings',V.view==='settings','settings')}</nav>
+    <nav class="tabs toptabs" aria-label="Main">${navLinks()}</nav>
     <button class="btn primary newbtn" data-action="new-campaign" aria-label="New campaign">+<span class="wide-only"> New campaign</span></button>
     <div class="usermenu">${m?av(m.id,'lg'):''}<span class="nm">${esc(m?m.name:'')}</span><button class="btn ghost sm" data-action="sign-out">Sign out</button></div>
   </header>`;
