@@ -27,8 +27,10 @@ const GUIDE = {
   web:'Website event listing. Headline is the page title. Body 60-120 words, scannable, details first.',
   other:'General church announcement, 40-90 words.'
 };
+// Social destinations (Facebook, Instagram, Social) go through approval, because approved posts go out automatically.
+// Every other destination is simply a task: Scheduled until someone marks it Done.
 const STATUSES = [['draft','Draft'],['review','In review'],['approved','Approved'],['scheduled','Scheduled'],['posted','Posted']];
-const DONE = new Set(['approved','scheduled','posted']);
+const TASK_STATUSES = [['scheduled','Scheduled'],['posted','Done']];
 const PALETTE = ['#91412D','#B47E3D','#6B6F57','#5F7478','#414A55','#7A5232','#A35A43','#4F6B4A'];
 const DEFAULT_CHANNELS = [
   {id:'social',name:'Social (Facebook + Instagram)',kind:'social'},
@@ -326,9 +328,10 @@ function renderView(){
 }
 function kb(ch, cls=''){ const k=kindOf(ch); return `<span class="kb ${cls}" style="--k:${k.color}" title="${esc(ch.name)}"><img src="${esc(iconUrl(iconOf(ch)))}" alt="" loading="lazy" onerror="this.remove()"><b>${esc(k.abbr)}</b></span>`; }
 function av(memberId, cls=''){ const m=memberById(memberId); if(!m) return `<span class="av none ${cls}" title="Unassigned">?</span>`; return `<span class="av ${cls}" style="--m:${esc(m.color)}" title="${esc(m.name)}">${esc(initials(m.name))}</span>`; }
-function pill(st){ const s=STATUSES.find(x=>x[0]===st)||STATUSES[0]; return `<span class="pill st-${s[0]}">${s[1]}</span>`; }
-function chip(d,label,removable){ const c=campOf(d), ch=channelById(d.channelId); const s=d.status||'draft';
-  return `<div class="chip ${isPending(d.campaignId)?'pending':''}" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${isPending(d.campaignId)?'Pending approval · ':''}${esc(c.title)} · ${esc(ch.name)}${timeTxt(d)} · ${esc((STATUSES.find(x=>x[0]===s)||STATUSES[0])[1])}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${s}"></span>${d.assigneeId?av(d.assigneeId):''}${removable?`<button class="chipx" data-action="quick-delete" data-id="${esc(d.id)}" aria-label="Remove ${esc(ch.name)}" title="Remove">×</button>`:''}</div>`; }
+const stClass = (d, v=st(d)) => (!isSocialDest(d) && v==='posted') ? 'done' : v;   // finished tasks show green
+function pill(d){ return `<span class="pill st-${stClass(d)}">${statusLabel(d)}</span>`; }
+function chip(d,label,removable){ const c=campOf(d), ch=channelById(d.channelId); const s=st(d);
+  return `<div class="chip ${isPending(d.campaignId)?'pending':''}" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${isPending(d.campaignId)?'Pending approval · ':''}${esc(c.title)} · ${esc(ch.name)}${timeTxt(d)} · ${esc(statusLabel(d))}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${stClass(d)}"></span>${d.assigneeId?av(d.assigneeId):''}${removable?`<button class="chipx" data-action="quick-delete" data-id="${esc(d.id)}" aria-label="Remove ${esc(ch.name)}" title="Remove">×</button>`:''}</div>`; }
 function evtBtn(c){ return `<button class="evt ${isPending(c.id)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}" title="Event: ${esc(c.title)}">★ <span>${esc(c.title)}</span></button>`; }
 function memberOptions(sel, includeNone=true, noneLabel='Unassigned'){ return (includeNone?`<option value="">${noneLabel}</option>`:'') + teamList().map(m=>`<option value="${esc(m.id)}" ${m.id===sel?'selected':''}>${esc(m.name)}</option>`).join(''); }
 function channelOptions(sel){ return settings().channels.map(c=>`<option value="${esc(c.id)}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join(''); }
@@ -346,7 +349,7 @@ function renderCalendar(){
   else { const first=new Date(V.anchor.getFullYear(),V.anchor.getMonth(),1); const st=startOfWeek(first); days=[...Array(42)].map((_,i)=>addDays(st,i));
     if(days[35].getMonth()!==first.getMonth()) days=days.slice(0,35); label=first.toLocaleDateString('en-US',{month:'long',year:'numeric'}); }
   const inRange=list.filter(d=>{ const dt=parseYmd(d.date); return dt && dt>=days[0] && dt<=days[days.length-1]; });
-  const unassigned=inRange.filter(d=>!d.assigneeId).length, notReady=inRange.filter(d=>!DONE.has(d.status)).length, posted=inRange.filter(d=>d.status==='posted').length;
+  const unassigned=inRange.filter(d=>!d.assigneeId).length, notReady=inRange.filter(needsApproval).length, posted=inRange.filter(isDone).length;
   const toolbar=`<div class="toolbar">
     <div class="row"><button class="btn iconbtn" data-action="cal-prev" aria-label="Previous">‹</button><button class="btn sm" data-action="cal-today">Today</button><button class="btn iconbtn" data-action="cal-next" aria-label="Next">›</button></div>
     <div class="rangelabel">${esc(label)}</div>
@@ -356,14 +359,14 @@ function renderCalendar(){
     <select class="compact" id="f-chan" data-ui="fChan" aria-label="Filter by destination"><option value="">All destinations</option>${channelOptions(V.fChan)}</select>
     <select class="compact" id="f-person" data-ui="fPerson" aria-label="Filter by person"><option value="">Everyone</option><option value="none" ${V.fPerson==='none'?'selected':''}>Unassigned</option>${memberOptions(V.fPerson,false)}</select>
   </div>
-  <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> not approved</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> posted</div></div>`;
+  <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> social to approve</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> done</div></div>`;
   if(!Object.keys(S.campaigns).length && !Object.keys(S.dests).length) return toolbar+`<div class="empty"><img src="/assets/mark-color.svg" alt=""><p><strong>Nothing scheduled yet.</strong></p><p>Create a campaign for an upcoming event, or add a one-off post that isn't part of a campaign.</p><div class="row" style="justify-content:center"><button class="btn primary" data-action="new-campaign">+ New campaign</button><button class="btn dark" data-action="new-oneoff">+ One-off post</button></div></div>`;
   if(V.calMode==='list'){
     let h=`<div class="agenda">`;
     for(const d of days){ const k=ymd(d); const items=(byKey[k]||[]).sort(byWhen); const ev=evts[k]||[];
       h+=`<section class="aday-l ${k===today?'today':''}" data-drop="${k}"><div class="ah"><span class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</span><span class="dd">${d.getDate()}</span><span class="dm">${d.toLocaleDateString('en-US',{month:'short'})}</span><span class="spacer"></span><button class="btn ghost sm" data-action="agenda-add" data-date="${k}" aria-label="Add on ${esc(fmtD(k))}">+ Add</button></div>
         ${ev.map(evtBtn).join('')}
-        ${items.length?items.map(x=>{ const ch=channelById(x.channelId), c=campOf(x); return `<button class="arow ${isPending(x.campaignId)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(x.id)}">${kb(ch)}<span class="at"><strong>${esc(c.title)}</strong><span class="small muted">${esc(ch.name)}${timeTxt(x)}</span></span>${x.assigneeId?av(x.assigneeId):''}${pill(x.status)}</button>`; }).join(''):(ev.length?'':'<div class="small muted aempty">Nothing scheduled</div>')}
+        ${items.length?items.map(x=>{ const ch=channelById(x.channelId), c=campOf(x); return `<button class="arow ${isPending(x.campaignId)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(x.id)}">${kb(ch)}<span class="at"><strong>${esc(c.title)}</strong><span class="small muted">${esc(ch.name)}${timeTxt(x)}</span></span>${x.assigneeId?av(x.assigneeId):''}${pill(x)}</button>`; }).join(''):(ev.length?'':'<div class="small muted aempty">Nothing scheduled</div>')}
       </section>`; }
     return toolbar+h+`</div>`;
   }
@@ -385,13 +388,13 @@ function renderCalendar(){
 
 /* ---------- campaigns ---------- */
 function campCard(c){
-  const ds=destsOf(c.id); const done=ds.filter(d=>DONE.has(d.status)).length; const pct=ds.length?Math.round(done/ds.length*100):0;
+  const ds=destsOf(c.id); const done=ds.filter(isDone).length; const pct=ds.length?Math.round(done/ds.length*100):0;
   const people=[...new Set(ds.map(d=>d.assigneeId).filter(Boolean))]; const chans=[...new Set(ds.map(d=>d.channelId))].map(channelById);
   return `<button class="ccard" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}">
     ${c.coverPath?`<div class="cover" style="background-image:url('${esc(fileUrl(c.coverPath))}')"></div>`:`<div class="stripe"></div>`}
     <div class="body">${c._draft?'<span class="pill st-draft" style="align-self:flex-start">Draft · not submitted</span>':isPending(c.id)?'<span class="pill st-new" style="align-self:flex-start">Pending approval</span>':c.status==='declined'?'<span class="pill st-declined" style="align-self:flex-start">Declined</span>':''}<h3>${esc(c.title||'Untitled draft')}</h3><div class="sub">${esc(fmtRange(c,true))}${c.location?' · '+esc(c.location):''}</div>
     <div class="row">${chans.slice(0,8).map(ch=>kb(ch)).join('')}${chans.length?'':'<span class="muted small">No destinations yet</span>'}</div>
-    <div class="row small"><span>${done} of ${ds.length} ready</span><span class="spacer"></span>${people.map(p=>av(p)).join('')}</div>
+    <div class="row small"><span>${done} of ${ds.length} done</span><span class="spacer"></span>${people.map(p=>av(p)).join('')}</div>
     <div class="progress" aria-hidden="true"><i style="width:${pct}%"></i></div></div></button>`;
 }
 function renderCampaigns(){
@@ -407,9 +410,9 @@ function renderCampaigns(){
 function drow(d, showCamp){
   const ch=channelById(d.channelId), c=campOf(d); const imgs=d.imagePaths||[];
   return `<button class="drow" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch,'lg')}
-    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${timeTxt(d)}${d.date&&d.status!=='posted'&&!DONE.has(d.status)&&d.date<todayStr()?' · <span style="color:var(--bad)">overdue</span>':''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
+    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${timeTxt(d)}${d.date&&!isDone(d)&&d.date<todayStr()?' · <span style="color:var(--bad)">overdue</span>':''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
     <div class="snip">${d.publishError?`<span style="color:var(--bad)">Posting failed: ${esc(d.publishError)}</span>`:(esc((d.headline?d.headline+' — ':'')+(d.copy||'')) || '<em>No copy yet</em>')}</div>
-    <div class="thumbs">${imgs.slice(0,3).map(i=>mediaTag(i)).join('')}</div>${av(d.assigneeId)}${pill(d.status)}</button>`;
+    <div class="thumbs">${imgs.slice(0,3).map(i=>mediaTag(i)).join('')}</div>${av(d.assigneeId)}${pill(d)}</button>`;
 }
 function fileTile(c,f){ const k=fileKind(f), isImg=k==='image';
   return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a>
@@ -418,7 +421,7 @@ function fileTile(c,f){ const k=fileKind(f), isImg=k==='image';
 function renderCampaign(id){
   const c=S.campaigns[id];
   if(!c) return `<div class="empty">This campaign was deleted or hasn't loaded yet. <a href="#campaigns">Back to campaigns</a></div>`;
-  const ds=destsOf(id); const done=ds.filter(d=>DONE.has(d.status)).length; const files=c.files||[]; const I=esc(id);
+  const ds=destsOf(id); const done=ds.filter(isDone).length; const files=c.files||[]; const I=esc(id);
   const inp=(f,label,type,ph,extra='')=>`<div class="field"><label class="lbl" for="c-${f}">${label}</label><input type="${type}" id="c-${f}" data-bind="camp:${f}" data-id="${I}" value="${esc(c[f]||'')}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra}></div>`;
   const pr=requestFor(id); const sub=memberById(c.createdBy);
   const banner = c._draft ? `<div class="planbanner" style="border-left-color:var(--gold);background:color-mix(in srgb,var(--gold) 7%,var(--surface))"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">New campaign · not saved yet</span>
@@ -459,8 +462,8 @@ function renderCampaign(id){
         <div class="pagehead" style="margin-bottom:12px"><div><h2>Destinations</h2><div class="sub">Every place this campaign goes out, with its own date, copy, photos and owner.</div></div>
         <button class="btn dark" data-action="add-dests" data-id="${I}">+ Add destinations</button></div>
         ${ds.length?`<div class="dlist">${ds.map(d=>drow(d,false)).join('')}</div>`:`<div class="empty">No destinations yet. Drag them onto the advertising calendar above, or use Add destinations.</div>`}
-        <div class="footbar"><span class="pill st-${done===ds.length&&ds.length?'approved':'review'}">${done} of ${ds.length} ready</span><span class="muted small">Ready = approved, scheduled or posted</span>
-        ${ds.some(d=>d.status==='review')?`<span class="spacer"></span><button class="btn sm" data-action="approve-all" data-id="${I}">Approve all in review</button>`:''}</div>
+        <div class="footbar"><span class="pill st-${done===ds.length&&ds.length?'approved':'review'}">${done} of ${ds.length} done</span><span class="muted small">Tasks are done when marked Done; social posts when posted</span>
+        ${ds.some(d=>isSocialDest(d)&&st(d)==='review')?`<span class="spacer"></span><button class="btn sm" data-action="approve-all" data-id="${I}">Approve all social in review</button>`:''}</div>
       </section>
     </div>
   </div>`;
@@ -492,8 +495,8 @@ function renderWork(){
   let h=`<div class="pagehead"><div><h1>My work</h1><div class="sub">Sorted by due date: the day each item is scheduled to go out.</div></div><div class="row"><label class="small muted" for="w-person">Showing</label><select class="compact" id="w-person" data-ui="workPerson">${memberOptions(pid,false)}<option value="none" ${pid==='none'?'selected':''}>Unassigned</option></select></div></div>`;
   const when=d=>d.date||'';
   const mine=Object.values(S.dests).filter(d=>!isDeclined(d.campaignId) && !(S.campaigns[d.campaignId]||{})._draft).filter(d=>pid==='none'?!d.assigneeId:d.assigneeId===pid).sort((a,b)=>(when(a)||'9999').localeCompare(when(b)||'9999')||byWhen(a,b));
-  const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>d.status!=='posted'); const ok=d=>!d.publishError;
-  const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>ok(d)&&when(d)&&when(d)<t)],['Due today',open.filter(d=>ok(d)&&when(d)===t)],['Next 7 days',open.filter(d=>ok(d)&&when(d)>t&&when(d)<=wk)],['Later',open.filter(d=>ok(d)&&(!when(d)||when(d)>wk))],['Posted recently',mine.filter(d=>d.status==='posted').reverse().slice(0,10)]];
+  const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>!isDone(d)); const ok=d=>!d.publishError;
+  const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>ok(d)&&when(d)&&when(d)<t)],['Due today',open.filter(d=>ok(d)&&when(d)===t)],['Next 7 days',open.filter(d=>ok(d)&&when(d)>t&&when(d)<=wk)],['Later',open.filter(d=>ok(d)&&(!when(d)||when(d)>wk))],['Done recently',mine.filter(isDone).reverse().slice(0,10)]];
   if(!mine.length) h+=`<div class="empty"><img src="/assets/mark-color.svg" alt="">Nothing assigned yet.</div>`;
   for(const [g,items] of groups){ if(!items.length) continue; h+=`<div class="sectionlabel">${g} · ${items.length}</div><div class="dlist">${items.map(d=>drow(d,true)).join('')}</div>`; }
   return h;
@@ -609,6 +612,11 @@ function renderSettings(){
     <div class="row"><button class="btn sm" data-action="change-pw">Change password</button></div>
   </section>
   <section class="panel stack"><h2>Facebook &amp; Instagram</h2>${social}</section>
+  <section class="panel stack"><h2>Weekly Update newsletter</h2>
+    ${CFG&&CFG.newsletter?`<p class="prose small" style="margin:0">Every hour, the calendar sends each <strong>${esc(s.channels.filter(c=>c.kind==='email').map(c=>c.name).join(', ')||'email')}</strong> destination going out in the next week to the <a href="${esc(CFG.newsletterUrl)}" target="_blank" rel="noopener">Newsletter Studio</a>. Each one becomes an announcement section marked "From the calendar." Sections nobody has edited stay in step with the calendar. Once someone edits a section in the studio, the calendar leaves it alone.</p>
+      <div class="row"><button class="btn dark" data-action="newsletter-sync" ${V.busy?'disabled':''}>${V.busy?'Sending…':'Send to newsletter now'}</button>${V.nlResult?`<span class="small muted">${esc(V.nlResult)}</span>`:''}</div>`
+    :`<p class="small muted" style="margin:0">Not connected. Add <code>NEWSLETTER_URL</code> and <code>NEWSLETTER_IMPORT_KEY</code> in Netlify to send each week's Weekly Update items to the Newsletter Studio automatically.</p>`}
+  </section>
   <section class="panel stack"><h2>Writing voice</h2>
     <div class="field"><label class="lbl" for="s-voice">Church voice for AI copy</label><textarea id="s-voice" data-bind="set:voice" rows="6">${esc(s.voice)}</textarea></div>
     <div class="field"><label class="lbl" for="s-handle">Page name in post previews</label><input type="text" id="s-handle" data-bind="set:handle" value="${esc(s.handle)}"></div>
@@ -636,7 +644,7 @@ function aiState(id){ return V.ai[id] ||= {open:false, loading:false, options:[]
 function renderDrawer(){
   const d=V.openDest && S.dests[V.openDest]; if(!d) return '';
   const c=campOf(d), ch=channelById(d.channelId), k=kindOf(ch), id=d.id;
-  const a=aiState(id); const len=(d.copy||'').length; const imgs=d.imagePaths||[]; const st=d.status||'draft'; const s=settings();
+  const a=aiState(id); const len=(d.copy||'').length; const imgs=d.imagePaths||[]; const cur=st(d); const s=settings();
   const previewImg = imgs[0] || c.coverPath;
   let html=`<div class="scrim" data-action="close-drawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(ch.name)} for ${esc(c.title)}">
   <div class="dhead">${kb(ch,'lg')}<div style="flex:1;min-width:0"><div class="t">${esc(ch.name)}</div>${c.oneOff?`<span class="small muted">One-off post</span>`:`<a class="small" href="#campaign-${esc(d.campaignId)}">${esc(c.title)}</a>`}</div><button class="btn ghost iconbtn" data-action="close-drawer" aria-label="Close">✕</button></div>
@@ -656,7 +664,8 @@ function renderDrawer(){
       </div>
       <span class="small muted">Due on the day it's scheduled to go out. ${d.assigneeId?`${esc((memberById(d.assigneeId)||{}).name||'They')} gets an email when assigned and a reminder that morning.`:'Pick someone to email them the assignment. They get a reminder that morning.'}</span>
     </div>
-    <div class="field"><span class="lbl">Status</span><div class="statusseg" role="group" aria-label="Status">${STATUSES.map(([v,l])=>`<button class="st-${v} ${st===v?'on':''}" data-action="set-status" data-id="${id}" data-status="${v}" aria-pressed="${st===v}"><span class="sdot"></span>${l}</button>`).join('')}</div></div>
+    <div class="field"><span class="lbl">Status</span><div class="statusseg" role="group" aria-label="Status">${statusesFor(d).map(([v,l])=>`<button class="st-${stClass(d,v)} ${cur===v?'on':''}" data-action="set-status" data-id="${id}" data-status="${v}" aria-pressed="${cur===v}"><span class="sdot"></span>${l}</button>`).join('')}</div>${isSocialDest(d)?`<span class="small muted" style="margin-top:6px">Social posts need to be <strong>Approved</strong> before they can post automatically.</span>`:''}</div>
+    ${ch.kind==='email'&&CFG&&CFG.newsletter?`<div class="small muted" style="margin:-8px 0 -6px">Goes into the Weekly Update in the Newsletter Studio automatically: the subject line becomes the title, and the copy and first photo are added too.</div>`:''}
     ${k.head?`<div class="field"><label class="lbl" for="d-head-${id}">${k.head}</label><input type="text" id="d-head-${id}" data-bind="dest:headline" data-id="${id}" value="${esc(d.headline)}"></div>`:''}
     <div class="field">
       <div class="copyhead"><label class="lbl" for="d-copy-${id}" style="margin:0">${ch.kind==='announcement'?'Script':k.social?'Caption':'Copy'}</label><span class="counter ${k.limit&&len>k.limit?'over':''}" id="cnt-${id}">${len}${k.limit?' / '+k.limit:''} characters</span><span class="spacer"></span>
@@ -792,6 +801,13 @@ function iconSearch(q){
 // Only Facebook, Instagram and Social destinations have a time (they can post automatically). Everything else is date-only.
 const hasTime = chOrId => !!kindOf(typeof chOrId==='string'?channelById(chOrId):chOrId).social;
 function defaultTime(chanId){ return hasTime(chanId) ? '09:00' : ''; }
+const isSocialDest = d => hasTime(d.channelId);
+const statusesFor = d => isSocialDest(d) ? STATUSES : TASK_STATUSES;
+// The status to show: tasks are only ever Scheduled or Done, whatever older data says.
+const st = d => isSocialDest(d) ? (d.status||'draft') : (d.status==='posted' ? 'posted' : 'scheduled');
+const isDone = d => st(d)==='posted';
+const needsApproval = d => isSocialDest(d) && ['draft','review'].includes(st(d));
+const statusLabel = d => (statusesFor(d).find(x=>x[0]===st(d))||statusesFor(d)[0])[1];
 const timeTxt = (d, sep=' · ') => hasTime(d.channelId) && d.time ? sep+fmtT(d.time) : '';
 function openAddDests(cid){
   const c=S.campaigns[cid]; const base=c&&parseYmd(c.date);
@@ -806,6 +822,7 @@ function defaultOwner(chId){ const o=channelById(chId).ownerId; return o && memb
 function newDest(campaignId, channelId, date, time, assigneeId, opts={}){
   const silent = opts.silent || isPending(campaignId);  // planned requests: email when approved
   const d={id:uid(), campaignId:campaignId||'', title:opts.title||'', details:'', channelId, date:date||'', time:time||'', assigneeId:(assigneeId===undefined||assigneeId===''||assigneeId===null)?defaultOwner(channelId):(assigneeId||''), status:'draft', headline:'', copy:'', notes:'', imagePaths:[], autoPublish:false, publishedAt:'', externalUrl:'', publishError:''};
+  d.status = hasTime(channelId) ? 'draft' : 'scheduled';
   saveDest(d); if(d.assigneeId && !silent) notifyAssigned(d.id); return d;
 }
 // New campaigns are unsaved drafts until someone clicks "Submit campaign", so blank campaigns are never stored.
@@ -824,6 +841,12 @@ function applyPostResult(d, r){
   else { d.publishPending=true; toast('Started. It will finish posting in the background in a few minutes.'); }
 }
 const A = {
+  async 'newsletter-sync'(){ flushAll(); V.busy=true; render(true);
+    try{ const r=await api('newsletter-sync',{});
+      V.nlResult = r.skipped ? r.skipped : `Sent ${r.sent} item${r.sent===1?'':'s'}: ${r.added} added, ${r.updated} updated, ${r.removed} removed${r.kept?`, ${r.kept} left alone because they were edited in the studio`:''}.`;
+      toast(r.skipped ? r.skipped : 'Newsletter updated'); }
+    catch(e){ V.nlResult=''; toast(e.message); }
+    V.busy=false; render(true); },
   'pick-icon'(el){ V.modal={type:'icon-picker', channelId:el.dataset.id}; render(true); setTimeout(()=>{ const q=document.getElementById('icon-q'); if(q) q.focus(); },30); },
   'set-icon'(el){ const ch=settings().channels.find(c=>c.id===V.modal.channelId); if(!ch) return; ch.icon=el.dataset.icon; saveSettings(); V.modal=null; render(true); toast(`Icon updated for ${ch.name}`); },
   'icon-reset'(){ const ch=settings().channels.find(c=>c.id===V.modal.channelId); if(!ch) return; delete ch.icon; saveSettings(); V.modal=null; render(true); },
@@ -905,8 +928,8 @@ const A = {
   'modal-save-dests'(){ const m=V.modal; let n=0; for(const [cid,r] of Object.entries(m.rows)){ if(r.on){ newDest(m.campaignId,cid,r.date,r.time,r.assigneeId||false); n++; } } V.modal=null; render(true); toast(`Added ${n} destination${n===1?'':'s'}`); },
   'delete-campaign'(el){ const c=S.campaigns[el.dataset.id]; confirmBox('Delete this campaign?', `"${c.title}" and its ${destsOf(c.id).length} destinations will be removed for everyone.`, ()=>{ removeCampaign(c.id); location.hash='campaigns'; }); },
   'delete-dest'(el){ const d=S.dests[el.dataset.id]; confirmBox('Delete this destination?', `${channelById(d.channelId).name} for "${campOf(d).title}" will be removed for everyone.`, ()=>{ V.openDest=null; removeDest(d.id); }); },
-  'set-status'(el){ const d=S.dests[el.dataset.id]; if(!d) return; d.status=el.dataset.status; saveDest(d); render(true); },
-  'approve-all'(el){ for(const d of destsOf(el.dataset.id)) if(d.status==='review'){ d.status='approved'; saveDest(d); } render(true); },
+  'set-status'(el){ const d=S.dests[el.dataset.id]; if(!d) return; d.status=el.dataset.status; saveDest(d); render(true); if(!isSocialDest(d) && d.status==='posted') toast('Marked done'); },
+  'approve-all'(el){ for(const d of destsOf(el.dataset.id)) if(isSocialDest(d)&&st(d)==='review'){ d.status='approved'; saveDest(d); } render(true); },
   'set-color'(el){ const c=S.campaigns[el.dataset.id]; c.color=el.dataset.color; saveCampaign(c); render(true); },
   'remove-cover'(el){ const c=S.campaigns[el.dataset.id]; const p=c.coverPath; c.coverPath=''; saveCampaign(c); render(true); deleteFileIfUnused(p); },
   'remove-photo'(el){ const d=S.dests[el.dataset.id]; const p=el.dataset.img; d.imagePaths=(d.imagePaths||[]).filter(i=>i!==p); saveDest(d); render(true); deleteFileIfUnused(p); },
@@ -921,7 +944,7 @@ const A = {
   'copy-text'(el){ const d=S.dests[el.dataset.id]; const k=kindOf(channelById(d.channelId)); const t=(k.head&&d.headline? d.headline+'\n\n':'')+(d.copy||''); if(!t.trim()){ toast('Nothing to copy yet'); return; } copyText(k.social?(d.copy||''):t); },
   'ai-toggle'(el){ const a=aiState(el.dataset.id); a.open=!a.open; render(true); },
   'ai-generate'(el){ generate(el.dataset.id); },
-  'ai-use'(el){ const d=S.dests[el.dataset.id], a=aiState(d.id), o=a.options[+el.dataset.i]; if(!o) return; const k=kindOf(channelById(d.channelId)); d.copy=o.text; if(k.head&&o.headline) d.headline=o.headline; if(d.status==='draft') d.status='review'; saveDest(d); a.open=false; a.options=[]; render(true); toast('Copy added and marked In review'); },
+  'ai-use'(el){ const d=S.dests[el.dataset.id], a=aiState(d.id), o=a.options[+el.dataset.i]; if(!o) return; const k=kindOf(channelById(d.channelId)); d.copy=o.text; if(k.head&&o.headline) d.headline=o.headline; if(isSocialDest(d) && st(d)==='draft') d.status='review'; saveDest(d); a.open=false; a.options=[]; render(true); toast(isSocialDest(d)?'Copy added and marked In review':'Copy added'); },
   async 'post-now'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const ch=channelById(d.channelId);
     confirmBox(`Post to ${ch.kind==='social'?'Facebook and Instagram':kindOf(ch).label} now?`, 'This publishes the caption and photos to the church\'s page right away.', async ()=>{
       flushAll(); V.busy=true; render(true);
@@ -979,7 +1002,10 @@ document.addEventListener('submit', async e=>{
 function onField(el, committed){
   const [kind, field]=el.dataset.bind.split(':'); const id=el.dataset.id; const val = el.type==='checkbox' ? el.checked : el.value;
   if(kind==='dest'){ const d=S.dests[id]; if(!d) return; const before=d[field];
-    if(field==='channelId'){ if(hasTime(val) && !d.time) d.time='09:00'; if(!hasTime(val)) d.time=''; }
+    if(field==='channelId'){ const was=st(Object.assign({},d,{channelId:before}));
+      if(hasTime(val) && !d.time) d.time='09:00'; if(!hasTime(val)) d.time='';
+      if(hasTime(val) && !hasTime(before)) d.status = was==='posted'?'posted':'draft';
+      if(!hasTime(val)) d.status = was==='posted'?'posted':'scheduled'; }
     if(field==='campaignId' && !val && before && !d.title){ const oc=S.campaigns[before]; if(oc){ d.title=oc.title; d.details=d.details||oc.description||''; } }
     d[field]=val;
     saveDest(d, committed?0:700);

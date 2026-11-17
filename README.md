@@ -151,6 +151,12 @@ Each destination has an **Assigned to** person. **It's due on the day it's sched
   - A declined campaign is hidden from the calendar and My work. The submitter can change it and click **Submit again**.
 - Communication requests work the same way. A planned request's campaign is pending until the request is approved.
 
+## Statuses
+
+- **Task destinations** (email, slides, bulletin, announcements, text, website and anything else) are just tasks: **Scheduled** until someone marks them **Done**. Done items drop off that person's My work list and don't get reminders.
+- **Social, Facebook and Instagram** destinations have an approval step: **Draft → In review → Approved → Posted**. Only an **Approved** post goes out automatically. **Scheduled** is for posts someone has scheduled by hand in Meta Business Suite.
+- The calendar's summary shows how many social posts still need approval. Campaign progress counts what's done or posted.
+
 ## Dates and times
 
 Only **Facebook, Instagram and Social** destinations have a time, because that's when they post automatically (9:00 AM unless you change it). Every other destination (email, slides, bulletin, announcements, text, website) is date-only, and emails to staff and requesters show just the date for those.
@@ -263,3 +269,20 @@ netlify.toml            Netlify settings
 ```
 
 Brand: colors and logo come from the FBSS Brand Guide (Kiest Creative). Hyogo, Mr Eaves XL Mod and Baskerville are shown on the web with the free Google Fonts Marcellus, Jost and Libre Baskerville. If the church licenses the original fonts for web use (for example through Adobe Fonts), they can be swapped in by editing the `--f-title`, `--f-ui` and `--f-body` lines at the top of `public/styles.css`.
+
+## Weekly Update newsletter
+Every hour, the calendar sends each Weekly Update (email-type) destination going out in the next week to the
+FBSS Newsletter Studio. It includes destinations from approved campaigns and one-off posts. Settings also has a **Send to newsletter now** button.
+
+Add these in Netlify (Project configuration → Environment variables), then redeploy:
+| Name | Value |
+|---|---|
+| NEWSLETTER_URL | the studio's web address, e.g. `https://newsletter-studio.netlify.app` |
+| NEWSLETTER_IMPORT_KEY | a long random password. Put the **same value** in the studio as `IMPORT_KEY`. Mark both as secret. |
+
+In the studio, each item becomes an announcement section tagged "From the calendar":
+- the subject line becomes the title
+- the event date, time and place go in the small line above the title
+- the copy, first photo and campaign link are added
+
+Sections nobody edits stay in step with the calendar. Once someone edits one in the studio, the calendar leaves it alone. No database changes are needed.
