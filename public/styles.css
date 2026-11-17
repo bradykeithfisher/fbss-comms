@@ -489,3 +489,13 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .mentionbox{position:fixed;z-index:200;min-width:220px;max-width:300px;background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 8px 24px rgba(46,52,60,.18);padding:4px;display:flex;flex-direction:column}
 .mentionbox button{display:flex;align-items:center;gap:10px;border:0;background:transparent;padding:8px 10px;border-radius:3px;font:15px var(--f-ui);color:var(--ink);text-align:left;cursor:pointer}
 .mentionbox button.on,.mentionbox button:hover{background:var(--surface-2)}
+/* comments on destinations */
+.cmts{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+.cmt{border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:10px 12px}
+.cmt-h{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.cmt-h strong{font-weight:600;font-size:14px;color:var(--slate)}
+.cmt-h .btn{margin-left:auto}
+.cmt-b{font-size:15px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+.cmt-b .tag{color:var(--rust);font-weight:600}
+.composer{display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;min-height:44px}

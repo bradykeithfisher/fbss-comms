@@ -320,3 +320,30 @@ alter table public.graphics_jobs add constraint graphics_jobs_kind_check check (
 -- Update 12: things to advertise without an event date (like an offering). Requests can say when to stop promoting.
 -- =====================================================================
 alter table public.requests add column if not exists promo_end date;
+
+-- =====================================================================
+-- Update 13: comments on destinations (replacing the single notes box). Staff can tag each other with @.
+-- =====================================================================
+create table if not exists public.destination_comments (
+  id uuid primary key default gen_random_uuid(),
+  destination_id uuid not null references public.destinations(id) on delete cascade,
+  author_id uuid references public.profiles(id) on delete set null default auth.uid(),
+  body text not null check (length(body) between 1 and 5000),
+  created_at timestamptz not null default now()
+);
+create index if not exists destination_comments_dest on public.destination_comments(destination_id, created_at);
+alter table public.destination_comments enable row level security;
+drop policy if exists "staff read comments" on public.destination_comments;
+create policy "staff read comments" on public.destination_comments for select to authenticated using (true);
+drop policy if exists "staff add own comments" on public.destination_comments;
+create policy "staff add own comments" on public.destination_comments for insert to authenticated with check (author_id = auth.uid());
+drop policy if exists "delete own comments or admin" on public.destination_comments;
+create policy "delete own comments or admin" on public.destination_comments for delete to authenticated
+  using (author_id = auth.uid() or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+do $$ begin
+  begin alter publication supabase_realtime add table public.destination_comments; exception when duplicate_object then null; end;
+end $$;
+-- Existing notes become the first comment on each destination (once).
+insert into public.destination_comments (destination_id, author_id, body, created_at)
+select d.id, null, d.notes, now() from public.destinations d
+where coalesce(trim(d.notes), '') <> '' and not exists (select 1 from public.destination_comments c where c.destination_id = d.id);

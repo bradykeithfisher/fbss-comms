@@ -85,7 +85,7 @@ const safeName = n => String(n||'file').normalize('NFKD').replace(/[^\w.\-]+/g,'
 
 /* ---------- state ---------- */
 let sb=null, CFG=null, session=null, rtChannel=null;
-const S = { settings:{channels:clone(DEFAULT_CHANNELS), voice:DEFAULT_VOICE, handle:'First Baptist Sulphur Springs'}, campaigns:{}, dests:{}, team:{}, requests:{}, gjobs:{}, loaded:false, social:null };
+const S = { settings:{channels:clone(DEFAULT_CHANNELS), voice:DEFAULT_VOICE, handle:'First Baptist Sulphur Springs'}, campaigns:{}, dests:{}, team:{}, requests:{}, gjobs:{}, comments:{}, loaded:false, social:null };
 const V = { screen:'boot', view:'calendar', campaignId:null, calMode: ls('cc.calMode')||(window.matchMedia('(max-width: 760px)').matches?'list':'week'), anchor:new Date(), fChan:'', fPerson:'', openDest:null, modal:null, ai:{}, workPerson:'', reqFilter:'new', requestId:null, pendingDest:null, authMsg:'', authErr:'', authMode:'login', busy:false, dragging:false };
 const settings = () => S.settings;
 const me = () => session && S.team[session.user.id];
@@ -237,6 +237,9 @@ function subscribe(){
       else S.dests[id]=incoming;
       render(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'}, p=>{ if(dirty['s:1']) return; if(p.new) applySettings(p.new.data); render(); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'destination_comments'}, p=>{
+      if(p.eventType==='INSERT'){ const l=S.comments[p.new.destination_id]; if(l && !l.some(c=>c.id===p.new.id)){ l.push(p.new); render(); } }
+      if(p.eventType==='DELETE'){ for(const k in S.comments) S.comments[k]=S.comments[k].filter(c=>c.id!==p.old.id); render(); } })
     .on('postgres_changes',{event:'*',schema:'public',table:'requests'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id);
       if(p.eventType==='DELETE') delete S.requests[id]; else S.requests[id]=p.new; render(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'profiles'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id); if(dirty['p:'+id]) return;
@@ -726,7 +729,7 @@ function renderDrawer(){
         return `<span class="small muted" style="margin:10px 0 6px">From campaign files (click to add):</span><div class="photos">${avail.map(f=>`<button class="photo ${isVideo(f.path)?'vid':''}" style="cursor:pointer" data-action="attach-file" data-id="${id}" data-file="${esc(f.path)}" title="Add ${esc(f.name)}">${mediaTag(f.path)}</button>`).join('')}</div>`; })()}
     </div>`;
   if(k.social) html += renderSocial(d,c,ch,previewImg,s);
-  html+=`<div class="field"><label class="lbl" for="d-notes-${id}">Notes for the team</label><textarea id="d-notes-${id}" data-bind="dest:notes" data-id="${id}" data-mentions="1" rows="3" placeholder="Type @ to tag someone. They'll get an email with your note.">${esc(d.notes)}</textarea></div>
+  html+=renderComments(d.id)+`
     <div class="row"><button class="btn danger sm" data-action="delete-dest" data-id="${id}">Delete this destination</button><span class="spacer"></span><button class="btn primary" data-action="close-drawer">Done</button></div>
   </div></aside>`;
   return html;
@@ -1029,6 +1032,9 @@ const A = {
   'delete-campaign'(el){ const c=S.campaigns[el.dataset.id]; confirmBox('Delete this campaign?', `"${c.title}" and its ${destsOf(c.id).length} destinations will be removed for everyone.`, ()=>{ removeCampaign(c.id); location.hash='campaigns'; }); },
   'delete-dest'(el){ const d=S.dests[el.dataset.id]; confirmBox('Delete this destination?', `${channelById(d.channelId).name} for "${campOf(d).title}" will be removed for everyone.`, ()=>{ V.openDest=null; removeDest(d.id); }); },
   'set-status'(el){ const d=S.dests[el.dataset.id]; if(!d) return; d.status=el.dataset.status; saveDest(d); render(true); if(!isSocialDest(d) && d.status==='posted') toast('Marked done'); },
+  'send-comment'(el){ sendComment(el.dataset.id); },
+  'del-comment'(el){ const id=el.dataset.id, dest=el.dataset.dest;
+    confirmBox('Delete this comment?', 'It will be removed for everyone.', async ()=>{ const { error } = await sb.from('destination_comments').delete().eq('id',id); if(error){ toast(error.message); return; } S.comments[dest]=(S.comments[dest]||[]).filter(c=>c.id!==id); render(true); }, 'Delete'); },
   'approve-all'(el){ for(const d of destsOf(el.dataset.id)) if(isSocialDest(d)&&st(d)==='draft'){ d.status='scheduled'; saveDest(d); } render(true); },
   'set-color'(el){ const c=S.campaigns[el.dataset.id]; c.color=el.dataset.color; saveCampaign(c); render(true); },
   'remove-cover'(el){ const c=S.campaigns[el.dataset.id]; const p=c.coverPath; c.coverPath=''; saveCampaign(c); render(true); deleteFileIfUnused(p); },
@@ -1077,9 +1083,8 @@ document.addEventListener('keydown', e=>{
   if((e.key==='Enter'||e.key===' ') && e.target.matches && e.target.matches('[role=button][data-action]')){ e.preventDefault(); e.target.click(); }
 });
 
-/* ---------- @mentions in notes ----------
-   Typing @ in Notes for the team suggests staff members. When you leave the box, anyone newly tagged
-   is emailed the note (by the notify-mention function). */
+/* ---------- @mentions ----------
+   Typing @ in a comment box suggests staff members. */
 let mention=null;   // { el, box, start, items, i }
 function mentionClose(){ if(mention&&mention.box) mention.box.remove(); mention=null; }
 const mentionsIn = text => { const t=String(text||'').toLowerCase(); return teamList().filter(m=>t.includes('@'+m.name.toLowerCase())).map(m=>m.id); };
@@ -1108,19 +1113,49 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='Escape'){ e.preventDefault(); e.stopImmediatePropagation(); mentionClose(); }
 }, true);
 document.addEventListener('scroll', ()=>{ if(mention) mentionClose(); }, true);
-document.addEventListener('focusin', e=>{ const el=e.target; if(el.dataset&&el.dataset.mentions) el._mentionsBefore=mentionsIn(el.value); });
-document.addEventListener('focusout', e=>{ const el=e.target; if(!(el.dataset&&el.dataset.mentions)) return;
-  setTimeout(()=>{ if(mention&&mention.el===el&&document.activeElement!==el) mentionClose(); }, 150);
-  const before=el._mentionsBefore||[]; const fresh=mentionsIn(el.value).filter(id=>!before.includes(id) && id!==(session&&session.user.id));
-  el._mentionsBefore=mentionsIn(el.value);
-  if(fresh.length) notifyMentions(el.dataset.id, fresh);
-});
-async function notifyMentions(destId, userIds){
-  await waitForSaves();
-  try{ const r=await api('notify-mention',{destId, userIds});
-    if(r.emailed){ const names=userIds.map(id=>(memberById(id)||{}).name).filter(Boolean); toast(`Emailed ${names.length===1?names[0]:names.length+' people'} your note`); } }
-  catch(e){ toast('Note saved, but the email didn\'t send: '+e.message); }
+document.addEventListener('focusout', e=>{ const el=e.target; if(el.dataset&&el.dataset.mentions) setTimeout(()=>{ if(mention&&mention.el===el&&document.activeElement!==el) mentionClose(); }, 150); });
+
+/* ---------- comments on destinations ----------
+   A thread per destination (destination_comments). Send posts a comment; anyone @tagged in it is emailed. */
+const commentLoading=new Set();
+function loadComments(destId){
+  if(S.comments[destId]||commentLoading.has(destId)) return; commentLoading.add(destId);
+  sb.from('destination_comments').select('*').eq('destination_id',destId).order('created_at').then(({data,error})=>{ commentLoading.delete(destId); if(!error){ S.comments[destId]=data||[]; render(); } });
 }
+function commentHtml(text){
+  let h=esc(text);
+  for(const m of teamList()) h=h.split('@'+esc(m.name)).join(`<strong class="tag">@${esc(m.name)}</strong>`);
+  return h.replace(/\n/g,'<br>');
+}
+function renderComments(destId){
+  loadComments(destId);
+  const list=S.comments[destId], meId=session&&session.user.id;
+  const when=t=>{ const d=new Date(t); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
+  const items=!list?'<div class="small muted">Loading comments…</div>':!list.length?'<div class="small muted">No comments yet.</div>':list.map(c=>{ const a=memberById(c.author_id);
+    return `<div class="cmt"><div class="cmt-h">${c.author_id?av(c.author_id):'<span class="av none" title="Earlier notes">N</span>'}<strong>${esc(a?a.name:c.author_id?'Former staff':'Earlier notes')}</strong><span class="small muted">${esc(when(c.created_at))}</span>
+      ${(c.author_id===meId||isAdmin())?`<button class="btn ghost iconbtn sm" data-action="del-comment" data-id="${esc(c.id)}" data-dest="${esc(destId)}" aria-label="Delete comment">×</button>`:''}</div><div class="cmt-b">${commentHtml(c.body)}</div></div>`; }).join('');
+  return `<div class="field"><span class="lbl">Comments${list&&list.length?' · '+list.length:''}</span><div class="cmts">${items}</div>
+    <div class="composer"><textarea id="cm-${esc(destId)}" data-comment="${esc(destId)}" data-mentions="1" rows="2" aria-label="Write a comment" placeholder="Write a comment. Type @ to tag someone.">${esc((V.commentDraft||{})[destId]||'')}</textarea>
+    <button class="btn primary sm" data-action="send-comment" data-id="${esc(destId)}" ${V.sendingComment?'disabled':''}>Send</button></div>
+    <span class="small muted">Anyone you tag gets an email with your comment.</span></div>`;
+}
+async function sendComment(destId){
+  const el=document.getElementById('cm-'+destId); const body=(el?el.value:'').trim(); if(!body||V.sendingComment) return;
+  V.sendingComment=true; mentionClose();
+  try{
+    await waitForSaves();
+    const { data, error } = await sb.from('destination_comments').insert({ destination_id:destId, body, author_id:session.user.id }).select();
+    if(error) throw error;
+    const l=S.comments[destId]||(S.comments[destId]=[]); if(data&&data[0]&&!l.some(c=>c.id===data[0].id)) l.push(data[0]);
+    (V.commentDraft||(V.commentDraft={}))[destId]=''; if(el) el.value='';
+    const tagged=mentionsIn(body).filter(id=>id!==session.user.id);
+    if(tagged.length && data&&data[0]){ try{ const r=await api('notify-mention',{commentId:data[0].id}); if(r.emailed){ const n=tagged.map(id=>(memberById(id)||{}).name).filter(Boolean); toast(`Comment sent. Emailed ${n.length===1?n[0]:n.length+' people'}.`); } }
+      catch(e){ toast('Comment sent, but the email didn\'t: '+e.message); } }
+  }catch(e){ toast('Couldn\'t send the comment: '+((e&&e.message)||'try again')); }
+  V.sendingComment=false; render(true);
+  const again=document.getElementById('cm-'+destId); if(again) again.focus();
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&e.target.dataset&&e.target.dataset.comment){ e.preventDefault(); sendComment(e.target.dataset.comment); } });
 
 /* ---------- forms ---------- */
 document.addEventListener('submit', async e=>{
@@ -1172,6 +1207,7 @@ function onField(el, committed){
 document.addEventListener('input', e=>{
   const el=e.target;
   if(el.dataset.mentions) mentionCheck(el);
+  if(el.dataset.comment){ (V.commentDraft||(V.commentDraft={}))[el.dataset.comment]=el.value; return; }
   if(el.dataset.bind){ const t=el.type; const committed = el.tagName==='SELECT'||t==='date'||t==='time'||t==='checkbox'; if(!committed) onField(el,false); return; }
   if(el.dataset.ai){ aiState(el.dataset.id)[el.dataset.ai]=el.value; return; }
   if(el.id==='icon-q') iconSearch(el.value);
