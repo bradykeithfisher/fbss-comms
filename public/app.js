@@ -434,9 +434,30 @@ function fileTile(c,f){ const k=fileKind(f), isImg=k==='image';
   return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a>
     <div class="fprev" style="${isImg?`background-image:url('${esc(fileUrl(f.path))}')`:''}">${isImg?'':esc(k)}</div><div class="fname">${esc(f.name)}</div>
     <button class="x" data-action="remove-file" data-id="${esc(c.id)}" data-file="${esc(f.path)}" aria-label="Remove ${esc(f.name)}">×</button></div>`; }
+/* Key art is automatic: the first 16:9 image in the campaign's files, in upload order, or the first image if
+   none is 16:9. It's stored in cover_path so the newsletter and social posting can use it. Image sizes are
+   recorded on upload; older files are measured once here. */
+const isImgFile=f=>/^image\//.test(f.type||'') || /\.(jpe?g|png|webp|gif)$/i.test(f.name||f.path||'');
+const isWide=f=>f.w&&f.h&&Math.abs(f.w/f.h-16/9)<0.06;
+const measuring=new Set();
+function imageSize(src){ return new Promise(res=>{ const i=new Image(); i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight}); i.onerror=()=>res(null); i.src=src; }); }
+function syncKeyArt(c){
+  if(!c||c._draft&&!(c.files||[]).length) return;
+  const imgs=(c.files||[]).filter(isImgFile);
+  const unknown=imgs.filter(f=>!f.w&&!measuring.has(f.path));
+  if(unknown.length){
+    unknown.forEach(f=>measuring.add(f.path));
+    Promise.all(unknown.map(async f=>{ const d=await imageSize(fileUrl(f.path)); if(d){ f.w=d.w; f.h=d.h; } else { f.w=-1; f.h=-1; } })).then(()=>{ saveCampaign(c); syncKeyArt(c); render(); });
+  }
+  if(imgs.some(f=>!f.w)) return;   // wait until every image is measured
+  const pick=imgs.find(isWide)||imgs.find(f=>f.w>0);
+  const next=pick?pick.path:c.coverPath;   // no images: keep any older key art
+  if(next!==c.coverPath){ c.coverPath=next; saveCampaign(c); setTimeout(()=>render(),0); }
+}
 function renderCampaign(id){
   const c=S.campaigns[id];
   if(!c) return `<div class="empty">This campaign was deleted or hasn't loaded yet. <a href="#campaigns">Back to campaigns</a></div>`;
+  syncKeyArt(c);
   const ds=destsOf(id); const done=ds.filter(isDone).length; const files=c.files||[]; const I=esc(id);
   const inp=(f,label,type,ph,extra='')=>`<div class="field"><label class="lbl" for="c-${f}">${label}</label><input type="${type}" id="c-${f}" data-bind="camp:${f}" data-id="${I}" value="${esc(c[f]||'')}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra}></div>`;
   const pr=requestFor(id); const sub=memberById(c.createdBy);
@@ -464,9 +485,8 @@ function renderCampaign(id){
       ${inp('link','Sign-up or info link','url','https://')}
       <div class="field"><span class="lbl">Calendar color</span><div class="swatches">${PALETTE.map(p=>`<button class="sw ${c.color===p?'on':''}" style="--c:${p}" data-action="set-color" data-id="${I}" data-color="${p}" aria-label="Color ${p}"></button>`).join('')}</div></div>
       <div class="field"><span class="lbl">Key art (used when a destination has no photo)</span>
-        <div class="coverbox" style="${c.coverPath?`background-image:url('${esc(fileUrl(c.coverPath))}')`:''}">
-          <label class="btn sm" for="up-cover-${I}">${c.coverPath?'Replace':'Upload image'}</label><input type="file" accept="image/*" class="sr" id="up-cover-${I}" data-upload="cover:${I}">
-          ${c.coverPath?`<button class="btn sm" data-action="remove-cover" data-id="${I}">Remove</button>`:''}</div></div>
+        <div class="coverbox" style="${c.coverPath?`background-image:url('${esc(fileUrl(c.coverPath))}')`:''}">${c.coverPath?'':'<span class="small muted" style="padding:10px;text-align:center">No image yet</span>'}</div>
+        <span class="small muted" style="margin-top:6px">Set automatically: the first 16 × 9 image in Campaign files (the title graphic, if you made one).</span></div>
       <div class="field"><span class="lbl">Campaign files · ${files.length}</span>
         <div class="files">${files.map(f=>fileTile(c,f)).join('')}<label class="addfile" for="up-file-${I}">+ Add files<br><span class="small muted">Images, PDFs, video</span></label><input type="file" multiple accept="image/*,application/pdf,video/*,.ai,.psd,.indd,.docx,.pptx,.zip" class="sr" id="up-file-${I}" data-upload="file:${I}"></div>
         <span class="small muted" style="margin-top:6px">Posters, logos, photos and PDFs. Images can be added to any destination.</span></div>
@@ -491,7 +511,7 @@ function renderAdCal(c, ds){
   const a=parseYmd(c.adStart), b=parseYmd(c.adEnd);
   if(!a||!b) return `<section class="panel">${head}<div class="empty">Set <strong>Advertise from</strong> and <strong>Advertise until</strong> to see every day in your advertising window.</div></section>`;
   if(b<a) return `<section class="panel">${head}<div class="empty">"Advertise until" is before "Advertise from". Fix the dates to see the calendar.</div></section>`;
-  if(daysBetween(c.adStart,c.adEnd)>180) return `<section class="panel">${head}<div class="empty">The advertising window is longer than 6 months. Shorten it to plan by day.</div></section>`;
+  if(daysBetween(c.adStart,c.adEnd)>366) return `<section class="panel">${head}<div class="empty">The advertising window is longer than a year. Shorten it to plan by day.</div></section>`;
   const palette=`<div class="palette" aria-label="Destinations to drag">${settings().channels.map(ch=>`<span class="pal" draggable="true" data-drag-chan="${esc(ch.id)}" data-camp="${esc(id)}" title="Drag onto a day">${kb(ch)}${esc(ch.name)}</span>`).join('')}</div>`;
   const st=startOfWeek(a), en=addDays(startOfWeek(b),6); const days=[]; for(let d=st; d<=en; d=addDays(d,1)) days.push(d);
   const ev=new Set(eventDays(c)); const byDate={}; for(const d of ds) if(d.date) (byDate[d.date] ||= []).push(d); const t=todayStr();
@@ -1009,7 +1029,7 @@ const A = {
   'remove-cover'(el){ const c=S.campaigns[el.dataset.id]; const p=c.coverPath; c.coverPath=''; saveCampaign(c); render(true); deleteFileIfUnused(p); },
   'remove-photo'(el){ const d=S.dests[el.dataset.id]; const p=el.dataset.img; d.imagePaths=(d.imagePaths||[]).filter(i=>i!==p); saveDest(d); render(true); deleteFileIfUnused(p); },
   'remove-file'(el){ const c=S.campaigns[el.dataset.id]; const f=(c.files||[]).find(x=>x.path===el.dataset.file); if(!f) return;
-    confirmBox(`Remove ${f.name}?`, 'It will be removed from this campaign\'s files.', ()=>{ c.files=(c.files||[]).filter(x=>x.path!==f.path); saveCampaign(c); deleteFileIfUnused(f.path); }, 'Remove'); },
+    confirmBox(`Remove ${f.name}?`, 'It will be removed from this campaign\'s files.', ()=>{ c.files=(c.files||[]).filter(x=>x.path!==f.path); if(c.coverPath===f.path){ const imgs=c.files.filter(isImgFile); c.coverPath=''; if(imgs.length) syncKeyArt(c); } saveCampaign(c); deleteFileIfUnused(f.path); render(true); }, 'Remove'); },
   async 'attach-file'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const path=el.dataset.file;
     if(/\.jpe?g$/i.test(path) || isVideo(path)){ d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); render(true); return; }
     // social posts need JPEG: make a JPEG copy for this destination
@@ -1138,10 +1158,11 @@ async function handleUpload(el){
       else if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
       else if(kind==='cover'){ body=await toJpeg(f); type='image/jpeg'; path=`campaigns/${id}/cover-${uid().slice(0,8)}.jpg`; }
       else path=`campaigns/${id}/${uid().slice(0,8)}-${safeName(f.name)}`;
+      let dims=null; if(kind==='file' && f.type.startsWith('image/')){ const u=URL.createObjectURL(f); dims=await imageSize(u); URL.revokeObjectURL(u); }
       const { error } = await sb.storage.from('files').upload(path, body, { contentType:type, upsert:false });
       if(error) throw error;
       if(kind==='dest'){ const d=S.dests[id]; if(!d) continue; d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); }
-      else if(kind==='file'){ const c=S.campaigns[id]; if(!c) continue; c.files=[...(c.files||[]), {path, name:f.name, type, size:f.size, at:Date.now()}]; saveCampaign(c); }
+      else if(kind==='file'){ const c=S.campaigns[id]; if(!c) continue; c.files=[...(c.files||[]), {path, name:f.name, type, size:f.size, at:Date.now(), ...(dims?{w:dims.w,h:dims.h}:{})}]; syncKeyArt(c); saveCampaign(c); }
       else { const c=S.campaigns[id]; if(!c) continue; const old=c.coverPath; c.coverPath=path; saveCampaign(c); deleteFileIfUnused(old); }
       n++; render(true);
     }catch(err){ toast('Upload failed: '+((err&&err.message)||'try again')); }
@@ -1346,9 +1367,10 @@ async function gfxCompose(){
     for(const [name, blob] of made){
       const path=`campaigns/${cid}/${uid().slice(0,8)}-${safeName(name)}`;
       const { error } = await sb.storage.from('files').upload(path, blob, { contentType:blob.type, upsert:false }); if(error) throw error;
-      outputs.push({ path, name, type:blob.type, size:blob.size, at:Date.now() });
+      const dims=/Title 16x9|Background 16x9/.test(name)?{w:1920,h:1080}:/Social 4x5/.test(name)?{w:1080,h:1350}:{};
+      outputs.push({ path, name, type:blob.type, size:blob.size, at:Date.now(), ...dims });
     }
-    const cc=S.campaigns[cid]; cc.files=[...(cc.files||[]), ...outputs]; saveCampaign(cc);
+    const cc=S.campaigns[cid]; cc.files=[...(cc.files||[]), ...outputs]; syncKeyArt(cc); saveCampaign(cc);
     const { data:done } = await sb.from('graphics_jobs').update({ status:'done', outputs:outputs.map(o=>({path:o.path,name:o.name})), updated_at:new Date().toISOString() }).eq('id',j.id).select();
     if(done&&done[0]) S.gjobs[j.id]=done[0];
     toast(`${made.length===1?made[0][0]:made.length+' graphics'} saved to campaign files`);
