@@ -15,6 +15,8 @@ export default async (req) => {
     start_date: DATE.test(b.startDate) ? b.startDate : null, end_date: DATE.test(b.endDate) ? b.endDate : null,
     start_time: TIME.test(b.startTime) ? b.startTime : null, end_time: TIME.test(b.endTime) ? b.endTime : null,
     not_sure: !!b.notSure,
+    promo_start: DATE.test(b.promoStart) ? b.promoStart : null,
+    needs_graphics: b.graphics === 'yes' ? 'yes' : b.graphics === 'no' ? 'no' : '',
   };
   if (!r.requester_name) return fail('Please enter your name.');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.requester_email)) return fail('Please enter a valid email address.');
@@ -22,6 +24,9 @@ export default async (req) => {
   if (!r.start_date) return fail('Please enter the event start date.');
   if (r.end_date && r.end_date < r.start_date) return fail('The end date is before the start date.');
   if (!r.description) return fail('Please describe what you want communicated.');
+  if (!r.promo_start) return fail('Please choose when to start promoting this event.');
+  if (r.promo_start > r.start_date) return fail('Promotion needs to start on or before the event start date.');
+  if (!r.needs_graphics) return fail('Please say whether you need graphics designed.');
   const s = await db('app_settings?id=eq.1&select=data');
   const chans = (s[0]?.data?.channels) || [];
   r.channel_ids = (Array.isArray(b.channelIds) ? b.channelIds : []).filter((id) => chans.some((c) => c.id === id)).slice(0, 30);
@@ -45,6 +50,7 @@ export default async (req) => {
         intro: `${esc(r.requester_name)}${r.ministry ? ' (' + esc(r.ministry) + ')' : ''} sent a request.`,
         rows: [['Event', r.title], ['When', fmtRange(r.start_date, r.end_date, r.start_time, r.end_time)], ['Location', r.location],
           ['Destinations', r.channel_ids.map((id) => chans.find((c) => c.id === id)?.name).filter(Boolean).join(', ') + (r.not_sure ? (r.channel_ids.length ? ', ' : '') + 'Not sure' : '')],
+          ['Start promoting', fmtRange(r.promo_start)], ['Graphics needed', r.needs_graphics === 'yes' ? 'Yes, please design graphics' : 'No, they have their own'],
           ['Files', r.files.length ? `${r.files.length} attached` : ''], ['Description', r.description]],
         button: { text: 'Review request', url: `${appUrl()}/#request-${row.id}` },
       }),

@@ -265,3 +265,9 @@ begin
 end $$;
 drop trigger if exists campaigns_guard_status on public.campaigns;
 create trigger campaigns_guard_status before insert or update on public.campaigns for each row execute function public.guard_campaign_status();
+
+-- =====================================================================
+-- Update 8: request form asks when to start promoting and whether graphics are needed
+-- =====================================================================
+alter table public.requests add column if not exists promo_start date;
+alter table public.requests add column if not exists needs_graphics text not null default '';

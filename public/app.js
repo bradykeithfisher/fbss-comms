@@ -532,6 +532,8 @@ function renderRequests(){
         ${sel.location?`<dt>Location</dt><dd>${esc(sel.location)}</dd>`:''}
         <dt>Description</dt><dd>${esc(sel.description)}</dd>
         <dt>Destinations</dt><dd style="white-space:normal"><div class="chlist">${chs.map(c=>`<span class="chtag">${kb(c)}${esc(c.name)}</span>`).join('')}${sel.not_sure?'<span class="chtag" style="padding-left:10px">Not sure: team decides</span>':''}</div></dd>
+        ${sel.promo_start?`<dt>Start promoting</dt><dd>${esc(fmtD(sel.promo_start,{weekday:'long',month:'short',day:'numeric'}))}</dd>`:''}
+        ${sel.needs_graphics?`<dt>Graphics</dt><dd>${sel.needs_graphics==='yes'?'<strong>Yes, needs graphics designed</strong>':'No, they have their own'}</dd>`:''}
         <dt>Files</dt><dd style="white-space:normal">${files.length?`<div class="files">${files.map(f=>{ const k=fileKind(f), img=k==='image'; return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a><div class="fprev" style="${img?`background-image:url('${esc(fileUrl(f.path))}')`:''}">${img?'':esc(k)}</div><div class="fname">${esc(f.name)}</div></div>`; }).join('')}</div>`:'<span class="muted">None</span>'}</dd>
         <dt>Received</dt><dd>${esc(new Date(sel.created_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</dd>
         ${sel.status!=='new'?`<dt>${sel.status==='approved'?'Approved':'Declined'}</dt><dd>${esc(reviewer?reviewer.name:'Staff')}${sel.reviewed_at?' · '+esc(new Date(sel.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})):''}${sel.decision_note?'\n“'+esc(sel.decision_note)+'”':''}</dd>`:''}
@@ -550,7 +552,7 @@ function renderPlanSummary(r, camp){
 }
 function createCampaignFromRequest(r, opts={}){
   const start=r.start_date||ymd(addDays(new Date(),21)); const adEnd=r.end_date&&r.end_date>start?r.end_date:start;
-  const c={id:uid(), title:r.title, date:r.start_date||'', endDate:r.end_date||r.start_date||'', time:t5(r.start_time), endTime:t5(r.end_time), adStart:todayStr()<start?todayStr():start, adEnd,
+  const c={id:uid(), title:r.title, date:r.start_date||'', endDate:r.end_date||r.start_date||'', time:t5(r.start_time), endTime:t5(r.end_time), adStart:(r.promo_start&&r.promo_start<=start?(r.promo_start<todayStr()?todayStr():r.promo_start):(todayStr()<start?todayStr():start)), adEnd,
     location:r.location||'', description:r.description||'', ministry:r.ministry||r.requester_name, link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'',
     files:(r.files||[]).map(f=>({path:f.path, name:f.name, type:f.type, size:f.size, at:Date.now()})), status:'pending'};
   saveCampaign(c);
