@@ -16,17 +16,25 @@ const KINDS = {
   web:{label:'Website', color:'#414A55', abbr:'WB', icon:'lucide:globe', head:'Page title'},
   other:{label:'Other', color:'#7D7468', abbr:'••', icon:'lucide:sparkles', head:'Headline'}
 };
+// Word ranges for the Length choice (Short / Medium / Long), by kind of destination.
+// Slides and text messages have fixed limits, so Length doesn't apply to them.
+const WORDS = {
+  social:[[15,35],[40,70],[80,130]], facebook:[[20,40],[50,90],[100,150]], instagram:[[15,35],[40,70],[80,130]],
+  email:[[30,50],[60,100],[110,160]], bulletin:[[20,35],[35,60],[60,90]], announcement:[[35,55],[70,100],[110,140]],
+  web:[[40,60],[70,110],[120,180]], other:[[20,40],[45,80],[90,130]],
+};
+const lenRange = (kind, len) => { const w=WORDS[kind]; return w ? w[{short:0,medium:1,long:2}[len]??1] : null; };
 const GUIDE = {
-  social:'One caption posted to BOTH Facebook and Instagram. Strong first line, short lines with line breaks, details (date, time, place) easy to spot, under 150 words. Links are not clickable on Instagram, so if there is a sign-up link say where to find it instead of pasting a long URL.',
-  facebook:'Facebook post. Conversational, 40-110 words, short paragraphs, clear details, ends with an invitation or call to action.',
-  instagram:'Instagram caption. Strong first line, short lines with line breaks, details (date, time, place) easy to spot, under 150 words.',
-  email:'Section in the church weekly email newsletter (the Weekly Update). Headline is the email subject line (under 50 characters). Body 60-130 words, warm, with the key details and a clear next step.',
+  social:'One caption posted to BOTH Facebook and Instagram. Strong first line, short lines with line breaks, details (date, time, place) easy to spot. Links are not clickable on Instagram, so if there is a sign-up link say where to find it instead of pasting a long URL.',
+  facebook:'Facebook post. Conversational, short paragraphs, clear details, ends with an invitation or call to action.',
+  instagram:'Instagram caption. Strong first line, short lines with line breaks, details (date, time, place) easy to spot.',
+  email:'Section in the church weekly email newsletter (the Weekly Update). Headline is the email subject line (under 50 characters). Body warm, with the key details and a clear next step.',
   slides:'Announcement slide shown on screens before and after service. Headline under 6 words. Body is one or two very short lines with date, time and place only (under 18 words total).',
-  bulletin:'Printed bulletin announcement. Headline plus 35-70 words, third person, details at the end.',
-  announcement:'Script a staff member reads aloud from the stage before service. 30-45 seconds spoken (70-110 words), natural spoken rhythm, repeat the date once.',
+  bulletin:'Printed bulletin announcement. Headline plus a short paragraph, third person, details at the end.',
+  announcement:'Script a staff member reads aloud from the stage before service. Natural spoken rhythm, repeat the date once.',
   text:'Mass text message. Under 160 characters total, friendly, includes date and time and one call to action. No hashtags.',
-  web:'Website event listing. Headline is the page title. Body 60-120 words, scannable, details first.',
-  other:'General church announcement, 40-90 words.'
+  web:'Website event listing. Headline is the page title. Body scannable, details first.',
+  other:'General church announcement.'
 };
 // Social destinations (Facebook, Instagram, Social) go through approval, because approved posts go out automatically.
 // Every other destination is simply a task: Scheduled until someone marks it Done.
@@ -770,11 +778,11 @@ function renderSocial(d,c,ch,previewImg,s){
   return preview+box;
 }
 function renderAI(d,a,k){
-  const id=d.id; const sel=(f,opts)=>`<select id="ai-${f}-${id}" data-ai="${f}" data-id="${id}">${opts.map(([v,l])=>`<option value="${v}" ${a[f]===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  const ch=channelById(d.channelId); const id=d.id; const sel=(f,opts)=>`<select id="ai-${f}-${id}" data-ai="${f}" data-id="${id}">${opts.map(([v,l])=>`<option value="${v}" ${a[f]===v?'selected':''}>${l}</option>`).join('')}</select>`;
   return `<div class="aibox" aria-live="polite"><div class="row"><span class="lbl" style="margin:0">Write with AI</span><span class="sub">Uses the campaign details and your church voice.</span></div>
     <div class="grid2">
       <div class="field"><label class="lbl" for="ai-tone-${id}">Tone</label>${sel('tone',[['voice','Our church voice'],['joyful','Joyful & vibrant'],['reverent','Reverent & reflective'],['urgent','Last call'],['playful','Playful (kids & families)']])}</div>
-      <div class="field"><label class="lbl" for="ai-length-${id}">Length</label>${sel('length',[['short','Short'],['medium','Medium'],['long','Long']])}</div>
+      <div class="field"><label class="lbl" for="ai-length-${id}">Length</label>${(()=>{ const r=l=>lenRange(ch.kind,l); return r('short') ? sel('length',[['short',`Short (${r('short').join('–')} words)`],['medium',`Medium (${r('medium').join('–')} words)`],['long',`Long (${r('long').join('–')} words)`]]) : '<div class="small muted" style="padding-top:10px">Set by this format</div>'; })()}</div>
       <div class="field"><label class="lbl" for="ai-emoji-${id}">Emoji</label>${sel('emoji',[['none','None'],['light','Light'],['more','More']])}</div>
       ${k.social?`<div class="field"><label class="lbl" for="ai-hashtags-${id}">Hashtags</label>${sel('hashtags',[['off','Off'],['on','A few at the end']])}</div>`:''}
     </div>
@@ -1494,12 +1502,12 @@ Destination: ${ch.name} (${k.label})
 Format guidance: ${GUIDE[ch.kind]||GUIDE.other}
 Timing: ${timing}
 Tone: ${tones[a.tone]||tones.voice}
-Length: ${a.length} for this format.
+${lenRange(ch.kind,a.length)?`LENGTH (follow strictly): each option's text must be ${lenRange(ch.kind,a.length)[0]} to ${lenRange(ch.kind,a.length)[1]} words, counting every word including the date, time and place. Do not go over ${lenRange(ch.kind,a.length)[1]} words.`:''}
 Emoji: ${a.emoji==='none'?'Do not use emoji.':a.emoji==='more'?'Use several emoji where natural.':'At most one or two emoji.'}
 ${k.social?(a.hashtags==='on'?'Hashtags: add 2-4 relevant hashtags on the last line.':'Hashtags: none.'):''}
 ${k.limit?`Hard limit: the text must be under ${k.limit} characters.`:''}
 ${a.extra?'Extra instructions: '+a.extra:''}
-${d.copy?'Current draft to improve on:\n'+d.copy:''}
+${d.copy?'Current draft (use it for ideas, but rewrite it to the length above):\n'+d.copy:''}
 
 Rules: do not invent facts (speakers, prices, deadlines, links) that are not in the details. Leave out anything marked "not set". Plain text, no markdown.
 Return ONLY a JSON object, no other text: {"options":[{"headline":"...","text":"..."},{"headline":"...","text":"..."}]}
