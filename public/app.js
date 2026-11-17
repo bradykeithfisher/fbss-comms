@@ -843,7 +843,7 @@ function applyPostResult(d, r){
 const A = {
   async 'newsletter-sync'(){ flushAll(); V.busy=true; render(true);
     try{ const r=await api('newsletter-sync',{});
-      V.nlResult = r.skipped ? r.skipped : `Sent ${r.sent} item${r.sent===1?'':'s'}: ${r.added} added, ${r.updated} updated, ${r.removed} removed${r.kept?`, ${r.kept} left alone because they were edited in the studio`:''}.`;
+      V.nlResult = r.skipped ? r.skipped : `Sent ${r.sent} item${r.sent===1?'':'s'}: ${r.added} added, ${r.updated} updated, ${r.removed} removed${r.kept?`, ${r.kept} left alone because they were edited in the studio`:''}.${r.photosCopied?` ${r.photosCopied} photo${r.photosCopied===1?'':'s'} copied to Cloudinary.`:''}${r.photosFailed?` ${r.photosFailed} photo${r.photosFailed===1?'':'s'} couldn't be copied yet and will be tried again next hour.`:''}`;
       toast(r.skipped ? r.skipped : 'Newsletter updated'); }
     catch(e){ V.nlResult=''; toast(e.message); }
     V.busy=false; render(true); },
