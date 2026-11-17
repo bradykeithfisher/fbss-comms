@@ -1,4 +1,4 @@
-// Lays the event's text, the FBSS brand fonts and logo over AI artwork, in the browser.
+// Lays the event's text in the FBSS brand fonts over AI artwork, in the browser.
 // Each function takes the campaign and the artwork's URL and returns finished files as Blobs.
 
 export const COLORS = { rust:'#91412D', gold:'#B47E3D', slate:'#414A55', cream:'#EFE9DB', moss:'#8C9077', ink:'#2E343C', muted:'#686E75', white:'#FFFFFF' };
@@ -61,11 +61,6 @@ function fit(x, text, fam, maxW, maxLines, max, min, spacingEm=0){
   if(lines.length>maxLines){ lines=lines.slice(0,maxLines); let l=lines[maxLines-1]; while(l && measure(x,l+'…')>maxW) l=l.replace(/\s*\S+$/,''); lines[maxLines-1]=l+'…'; }
   return {size:min, lines};
 }
-async function logoCanvas(width, white){
-  const img=await loadImage(white?'/assets/logo-horizontal-reversed.svg':'/assets/logo-horizontal.svg'); const h=Math.round(width*250/890);
-  const [cv,x]=canvas(width,h); x.drawImage(img,0,0,width,h);
-  return cv;
-}
 const toBlob = (cv, type='image/jpeg', q=0.92) => new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error("Couldn't save the image.")), type, q));
 const lineList = (...xs) => xs.filter(Boolean).join('  ·  ');
 
@@ -91,7 +86,6 @@ export async function makeTitle(c, artUrl){
   setFont(x,FAM.title,ttl.size,ttl.size*0.03); x.fillStyle='#fff';
   ttl.lines.forEach(l=>{ y+=lh; x.fillText(l,X,y-lh*0.12); });
   if(t.where){ y+=30; setFont(x,FAM.serifI,whereSize,0); x.fillStyle=COLORS.cream; y+=whereSize; x.fillText(t.where,X,y); }
-  const logo=await logoCanvas(300,true); x.drawImage(logo,X,H-logo.height-70);
   return toBlob(cv);
 }
 
@@ -99,7 +93,6 @@ export async function makeTitle(c, artUrl){
 export async function makeSocial(c, artUrl){
   await loadFonts(); const t=eventText(c); const art=await loadImage(artUrl);
   const W=1080, H=1350, X=72, maxW=W-2*X, [cv,x]=canvas(W,H); x.textBaseline='alphabetic';
-  const logo=await logoCanvas(250,false);
   const eyebrow=lineList(t.date,t.time).toUpperCase();
   // Pick the biggest title that fits, then size the cream band to the text.
   let ttl=null, bandH=0;
@@ -107,8 +100,8 @@ export async function makeSocial(c, artUrl){
     setFont(x,FAM.title,size,size*0.03); const lines=wrap(x,t.title.toUpperCase(),maxW);
     const ok=lines.length<=3 && lines.every(l=>measure(x,l)<=maxW); if(!ok && size>44) continue;
     const f= ok ? {size, lines} : fit(x,t.title.toUpperCase(),FAM.title,maxW,3,44,44,0.03);
-    const textH=64+(eyebrow?29+26:0)+f.lines.length*size*1.06+(t.where?56:0)+logo.height+60;
-    if(textH<=H*0.42 || size===44){ ttl=f; bandH=Math.max(Math.round(H*0.31), Math.round(textH)); break; }
+    const textH=64+(eyebrow?29+26:0)+f.lines.length*size*1.06+(t.where?56:0)+64;
+    if(textH<=H*0.42 || size===44){ ttl=f; bandH=Math.max(Math.round(H*0.27), Math.round(textH)); break; }
   }
   const top=H-bandH;
   cover(x,art,0,0,W,top+40,0.3);
@@ -118,7 +111,6 @@ export async function makeSocial(c, artUrl){
   const lh=ttl.size*1.06; setFont(x,FAM.title,ttl.size,ttl.size*0.03); x.fillStyle=COLORS.slate;
   ttl.lines.forEach(l=>{ y+=lh; x.fillText(l,X,y-lh*0.1); });
   if(t.where){ y+=46; const w=fit(x,t.where,FAM.serifI,maxW,1,31,22); setFont(x,FAM.serifI,w.size,0); x.fillStyle=COLORS.muted; x.fillText(w.lines[0],X,y); }
-  x.drawImage(logo, W-X-logo.width+10, H-logo.height-40);
   return toBlob(cv);
 }
 
@@ -151,7 +143,7 @@ export async function makePoster(c, artUrl){
     for(const w of words){ const tt=cur?cur+' '+w:w; if(width(tt,size,cs)<=mw||!cur) cur=tt; else { out.push(cur); cur=w; } } if(cur) out.push(cur); return out; };
   const fitPdf=(text,font,mw,lines,max,min,csEm)=>{ for(let s=max;s>=min;s-=4){ const l=wrapPdf(text,font,s,s*csEm,mw); if(l.length<=lines && l.every(x=>width(x,s,s*csEm)<=mw)) return {s,l}; } return {s:min,l:wrapPdf(text,font,min,min*csEm,mw).slice(0,lines)}; };
   const draw=(s,font,size,color,x,y,cs=0)=>{ doc.setFont(font,'normal'); doc.setFontSize(size); doc.setTextColor(...hex(color)); doc.text(s,x,y,{charSpace:cs}); };
-  const bottomRow=H-150, logoH=150, top=artH+12+170, limit=bottomRow-logoH-110;
+  const bottomRow=H-170, top=artH+12+170, limit=bottomRow-150;
   const eyebrow=lineList(t.date,t.time).toUpperCase();
   const eyeH=eyebrow?66+70:0, whereH=t.where?40+74:0, lineH=50*1.45;
   const blurbAll=t.blurb?wrapPdf(t.blurb,'serif',50,0,maxW):[];
@@ -172,9 +164,7 @@ export async function makePoster(c, artUrl){
     if(max>0){ let lines=blurbAll; if(lines.length>max){ lines=lines.slice(0,max); lines[max-1]=lines[max-1].replace(/[\s,.;:]*\S*$/,'')+'…'; }
       y+=50; lines.forEach(l=>{ y+=lineH; draw(l,'serif',50,COLORS.ink,M,y); }); }
   }
-  const logo=await logoCanvas(2000,false); const lw=logoH*logo.width/logo.height;
-  doc.addImage(logo.toDataURL('image/png'),'PNG',M,bottomRow-logoH,lw,logoH,undefined,'FAST');
-  doc.setFont('ui','normal'); const ls=58, lsw=width(t.link.toUpperCase(),ls,ls*0.12);
-  draw(t.link.toUpperCase(),'ui',ls,COLORS.rust,W-M-lsw,bottomRow-logoH/2+ls*0.35,ls*0.12);
+  doc.setFont('ui','normal'); const ls=58;
+  draw(t.link.toUpperCase(),'ui',ls,COLORS.rust,M,bottomRow,ls*0.12);
   return doc.output('blob');
 }
