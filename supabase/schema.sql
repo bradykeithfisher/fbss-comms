@@ -299,3 +299,12 @@ drop policy if exists "staff update graphics" on public.graphics_jobs;
 create policy "staff update graphics" on public.graphics_jobs for update to authenticated using (true) with check (true);
 drop policy if exists "staff delete graphics" on public.graphics_jobs;
 create policy "staff delete graphics" on public.graphics_jobs for delete to authenticated using (true);
+
+-- =====================================================================
+-- Update 10: graphics start with design concepts. Staff pick one ('chosen'; the others become 'passed'),
+-- then the deliverables are made from it.
+-- =====================================================================
+alter table public.graphics_jobs drop constraint if exists graphics_jobs_kind_check;
+alter table public.graphics_jobs add constraint graphics_jobs_kind_check check (kind in ('concept','poster','wide','social'));
+alter table public.graphics_jobs drop constraint if exists graphics_jobs_status_check;
+alter table public.graphics_jobs add constraint graphics_jobs_status_check check (status in ('queued','working','art','composing','done','failed','chosen','passed'));

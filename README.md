@@ -293,6 +293,10 @@ Each campaign has a **✦ Design graphics** button (under Campaign files). It ma
 - a 16 × 9 title graphic and a 16 × 9 background graphic
 - 4 × 5 social posts (as many as you like; **+ Another social post** adds one more)
 
+It starts with **two design concepts** (shown as the title graphic). Pick one with **Use this concept**, or click
+**Try a third concept** (and more if needed). Once you choose, every deliverable is made to match the chosen concept:
+the concept itself becomes the title and background art, and OpenAI recreates it in the poster and social shapes.
+
 OpenAI creates text-free artwork from the campaign's title, description and the style you pick. The app then adds the
 date, time, place, title and FBSS logo in the brand fonts, so names and dates are always spelled right, and saves the
 finished files to the campaign. You can leave the page while the artwork is being made; it finishes the next time

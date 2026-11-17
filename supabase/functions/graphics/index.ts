@@ -35,11 +35,13 @@ export const SIZES: Record<string, [number, number]> = {
   poster: [2304, 2688], // 6:7, the shape of a 36 x 42 inch poster
   wide: [2048, 1152],   // 16:9, for the title and background graphics
   social: [1088, 1360], // 4:5, for Facebook and Instagram
+  concept: [2048, 1152], // concepts are 16:9; the chosen one becomes the title and background art
 };
 const COMPOSITION: Record<string, string> = {
   poster: 'A tall vertical artwork. Put the main subject in the upper two-thirds. Keep the bottom third simple and calm, because a text panel will cover it.',
   wide: 'A wide 16:9 artwork. Keep the main subject toward the right side and leave the left half calm and uncluttered, because a title will be placed there.',
   social: 'A vertical 4:5 artwork. Put the main subject in the upper part and keep the lower third calm and simple, because a caption band will cover it.',
+  concept: 'A wide 16:9 artwork. Keep the main subject toward the right side and leave the left half calm and uncluttered, because a title will be placed there.',
 };
 const STYLES: Record<string, string> = {
   auto: 'Choose the visual style that best fits this event.',
@@ -51,7 +53,11 @@ const STYLES: Record<string, string> = {
 
 export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, unknown>) {
   const desc = String(camp.description || '').replace(/\s+/g, ' ').slice(0, 700);
+  const ref = opts.ref ? [
+    `The attached image is the approved design concept. Recreate the same artwork, with the same style, subject, colors, lighting and mood, reframed for the shape described below. It should look like part of the same set.`,
+  ] : [];
   const lines = [
+    ...ref,
     `Artwork for a church event graphic for First Baptist Sulphur Springs, a Baptist church in a small Texas town. Tasteful, warm and welcoming.`,
     `Event: ${camp.title || 'Church event'}.`,
     desc ? `About the event: ${desc}` : '',
@@ -60,7 +66,8 @@ export function buildPrompt(kind: string, camp: Record<string, string>, opts: Re
     opts.notes ? `Ideas from the church staff: ${String(opts.notes).slice(0, 600)}` : '',
     `Colors: a warm palette drawn from rust red (#91412D), warm gold (#B47E3D), moss green (#8C9077), dusty blue (#ACBABD), slate (#414A55) and cream (#EFE9DB).`,
     COMPOSITION[kind] || '',
-    Number(opts.variation) > 1 ? `This is version ${Number(opts.variation)}: use a clearly different composition or viewpoint from the other versions.` : '',
+    kind === 'concept' && Number(opts.variation) > 1 ? `This is design concept ${Number(opts.variation)}: take a clearly different creative direction (subject, composition or treatment) from the other concepts.` : '',
+    kind !== 'concept' && Number(opts.variation) > 1 ? `This is version ${Number(opts.variation)}: use a different crop or viewpoint of the same scene.` : '',
     `Do not include any text, letters, numbers, words, signs, logos or watermarks anywhere in the image.`,
     `If people appear, show them from behind, in silhouette or at a distance, with no close-up faces.`,
   ];
@@ -91,20 +98,25 @@ function b64ToBytes(b64: string) {
   return out;
 }
 
+export const publicFileUrl = (path: string) => `${URL_()}/storage/v1/object/public/files/${path.split('/').map(encodeURIComponent).join('/')}`;
 export async function makeArt(job: Record<string, any>, camp: Record<string, string>) {
   const [w, h] = SIZES[job.kind] || SIZES.social;
-  const res = await fetch('https://api.openai.com/v1/images/generations', {
+  const opts = job.options || {};
+  const req: Record<string, unknown> = {
+    model: env('OPENAI_IMAGE_MODEL') || 'gpt-image-2',
+    prompt: buildPrompt(job.kind, camp, opts),
+    size: `${w}x${h}`,
+    quality: env('OPENAI_IMAGE_QUALITY') || 'medium',
+    output_format: 'jpeg',
+    output_compression: 92,
+    n: 1,
+  };
+  // With an approved concept, ask for the same artwork in this shape (image edit with the concept as reference).
+  if (opts.ref) req.images = [{ image_url: publicFileUrl(String(opts.ref)) }];
+  const res = await fetch(`https://api.openai.com/v1/images/${opts.ref ? 'edits' : 'generations'}`, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + env('OPENAI_API_KEY'), 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: env('OPENAI_IMAGE_MODEL') || 'gpt-image-2',
-      prompt: buildPrompt(job.kind, camp, job.options || {}),
-      size: `${w}x${h}`,
-      quality: env('OPENAI_IMAGE_QUALITY') || 'medium',
-      output_format: 'jpeg',
-      output_compression: 92,
-      n: 1,
-    }),
+    body: JSON.stringify(req),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

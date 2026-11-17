@@ -478,3 +478,10 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .gjob.ok{border-left-color:var(--moss)}
 .gjob .gj-t{font-weight:500;font-size:14px;color:var(--slate)}
 .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line-2);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;vertical-align:-1px;margin-right:4px}
+.gconcepts{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:3px;padding:10px;background:var(--surface);margin-bottom:10px}
+.gthumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.gthumb{aspect-ratio:16/9;border:1px solid var(--line-2);border-radius:3px;background:var(--surface-2) center/cover no-repeat;cursor:pointer;display:grid;place-items:center;color:var(--rust);font-weight:600;padding:0}
+.gcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:16px}
+.gcard{display:flex;flex-direction:column;gap:8px}
+.gprev{position:relative;aspect-ratio:16/9;border:1px solid var(--line-2);border-radius:3px;background:var(--surface-2) center/cover no-repeat;display:grid;place-items:center}
+.gprev .open{position:absolute;inset:0}

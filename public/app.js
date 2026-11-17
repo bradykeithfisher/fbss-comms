@@ -755,6 +755,8 @@ function renderModal(){
   const wrap=(inner,w)=>`<div class="modalwrap" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-t" ${w?`style="width:min(${w}px,100%)"`:''}>${inner}</div></div>`;
   if(m.type==='confirm') return wrap(`<h2 id="m-t">${esc(m.title)}</h2><p class="prose" style="margin:0">${esc(m.body)}</p><div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="confirm-yes">${esc(m.yes||'Delete')}</button></div>`);
   if(m.type==='graphics') return wrap(renderGfxModal(m), 560);
+  if(m.type==='gfx-review') return wrap(renderGfxReview(m), 980);
+  if(m.type==='gfx-approve') return wrap(renderGfxApprove(m), 560);
   if(m.type==='change-pw') return wrap(`<h2 id="m-t">Change password</h2><form class="stack" data-form="change-pw" style="gap:12px"><div class="field"><label class="lbl" for="cp-1">New password</label><input type="password" id="cp-1" autocomplete="new-password" minlength="8" required></div><div class="field"><label class="lbl" for="cp-2">Confirm</label><input type="password" id="cp-2" autocomplete="new-password" minlength="8" required></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-action="modal-close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
   if(m.type==='pick-campaign'){
     const ch=channelById(m.channelId); const t=todayStr();
@@ -934,22 +936,41 @@ const A = {
   'pick-channel'(el){ const m=V.modal; if(m.then==='campaign'){ V.modal={type:'pick-campaign', channelId:el.dataset.id, date:m.date}; render(true); return; } const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
   'add-dests'(el){ openAddDests(el.dataset.id); },
   'modal-close'(){ V.modal=null; render(true); },
-  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, style:o.style||'auto', notes:o.notes||''}; render(true); },
+  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, style:o.style||'auto', notes:o.notes||''}; render(true); },
   async 'gfx-go'(){ const m=V.modal; if(!m||V.busy) return; const c=S.campaigns[m.id];
-    const pick=k=>document.getElementById('gf-'+k).checked; const count=Math.min(6,Math.max(1,parseInt(document.getElementById('gf-count').value,10)||1));
     const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim();
-    const list=[]; const base={style,notes};
-    if(pick('poster')) list.push({kind:'poster',options:{...base}});
-    if(pick('title')||pick('background')) list.push({kind:'wide',options:{...base,title:pick('title'),background:pick('background')}});
-    if(pick('social')){ const have=gfxJobs(m.id).filter(j=>j.kind==='social').length; for(let i=1;i<=count;i++) list.push({kind:'social',options:{...base,variation:have+i}}); }
-    Object.assign(m,{ pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?count:0, style, notes });
-    if(!list.length){ toast('Choose at least one graphic'); return; }
+    Object.assign(m, gfxReadPick(), { style, notes });
+    if(!m.pick.poster&&!m.pick.title&&!m.pick.background&&!m.social){ toast('Choose at least one graphic'); return; }
+    const plan={...m.pick, social:m.social}, batch=uid();
     flushAll(); V.busy=true; render(true);
-    try{ await gfxStart(c.id, list); V.modal=null; toast('Creating artwork. You can keep working; this takes a minute or two.'); }
+    try{ await gfxStart(c.id, [1,2].map(n=>({kind:'concept', options:{style, notes, plan, batch, variation:n}}))); V.modal=null; toast('Painting two concepts. You can keep working; this takes a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
-  async 'gfx-more'(el){ const cid=el.dataset.id; const jobs=gfxJobs(cid); const last=jobs.slice(-1)[0]; const o=(last&&last.options)||{};
-    try{ await gfxStart(cid,[{kind:'social',options:{style:o.style||'auto',notes:o.notes||'',variation:jobs.filter(j=>j.kind==='social').length+1}}]); toast('Creating another social post…'); }catch(e){ toast(e.message); } },
+  'gfx-review'(el){ V.modal={type:'gfx-review', id:el.dataset.id}; render(true); gfxSchedule(); },
+  async 'gfx-another'(el){ const cid=el.dataset.id; const r=gfxRound(cid); if(!r) return; const o=r.list[0].options;
+    try{ await gfxStart(cid,[{kind:'concept', options:{style:o.style, notes:o.notes, plan:o.plan, batch:o.batch, variation:Math.max(...r.list.map(j=>j.options.variation||1))+1}}]); }catch(e){ toast(e.message); } },
+  'gfx-choose'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return; const p=j.options.plan||{};
+    V.modal={type:'gfx-approve', id:j.id, pick:{poster:p.poster!==false, title:p.title!==false, background:p.background!==false}, social:p.social===undefined?1:p.social}; render(true); },
+  async 'gfx-approve-go'(){ const m=V.modal; if(!m||V.busy) return; const j=S.gjobs[m.id]; if(!j) return;
+    Object.assign(m, gfxReadPick()); const {pick,social}=m;
+    if(!pick.poster&&!pick.title&&!pick.background&&!social){ toast('Choose at least one graphic'); return; }
+    V.busy=true; render(true);
+    try{
+      const round=gfxRound(j.campaign_id);
+      await sb.from('graphics_jobs').update({ status:'chosen', updated_at:new Date().toISOString() }).eq('id',j.id); S.gjobs[j.id]={...j,status:'chosen'};
+      for(const o of (round?round.list:[])) if(o.id!==j.id && o.status!=='chosen'){ await sb.from('graphics_jobs').update({ status:'passed', updated_at:new Date().toISOString() }).eq('id',o.id); S.gjobs[o.id]={...o,status:'passed'}; }
+      const base={style:j.options.style, notes:j.options.notes, ref:j.art_path, concept:j.id}, list=[];
+      if(pick.title||pick.background) list.push({kind:'wide', options:{...base, title:pick.title, background:pick.background}, artPath:j.art_path});
+      if(pick.poster) list.push({kind:'poster', options:{...base}});
+      for(let i=1;i<=social;i++) list.push({kind:'social', options:{...base, variation:i}});
+      V.modal=null; await gfxStart(j.campaign_id, list);
+      toast('Making your graphics. They\'ll be saved to Campaign files as they finish.');
+    }catch(e){ toast(e.message||'Could not start'); }
+    V.busy=false; render(true); },
+  'gfx-cancel'(el){ const cid=el.dataset.id; const r=gfxRound(cid); if(!r) return;
+    confirmBox('Start over?', 'This clears these concepts so you can design graphics again.', async ()=>{ for(const j of r.list){ delete S.gjobs[j.id]; await sb.from('graphics_jobs').update({ status:'passed', updated_at:new Date().toISOString() }).eq('id',j.id); } render(true); }, 'Start over'); },
+  async 'gfx-more'(el){ const cid=el.dataset.id; const ch=gfxChosen(cid); if(!ch) return; const n=gfxJobs(cid).filter(j=>j.kind==='social').length+1;
+    try{ await gfxStart(cid,[{kind:'social',options:{style:ch.options.style,notes:ch.options.notes,ref:ch.art_path,concept:ch.id,variation:n}}]); toast('Making another social post…'); }catch(e){ toast(e.message); } },
   async 'gfx-retry'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return;
     await sb.from('graphics_jobs').delete().eq('id',j.id); delete S.gjobs[j.id];
     try{ await gfxStart(j.campaign_id,[{kind:j.kind,options:j.options}]); }catch(e){ toast(e.message); render(true); } },
@@ -1107,50 +1128,103 @@ async function handleUpload(el){
 
 
 /* ---------- AI graphics ----------
-   A row in graphics_jobs per graphic. The Supabase Edge Function "graphics" has OpenAI paint text-free artwork,
-   then this page lays the event text, fonts and logo on top (graphics.js) and saves the files to the campaign. */
+   1) "Design graphics" asks for two design concepts (16:9 artwork). 2) Staff review them, ask for another,
+   and choose one. 3) The chosen concept becomes the title/background art, and OpenAI recreates it for the
+   poster and social posts. Text, fonts and logo are added here (graphics.js) and the files saved to the campaign.
+   One row per image in graphics_jobs; the Supabase Edge Function "graphics" makes the artwork. */
 const GFX_STYLES=[['auto','Let the AI choose'],['photo','Photographic'],['illustrated','Illustrated'],['watercolor','Watercolor'],['textured','Textured, no people']];
-const gfxLabel=j=> j.kind==='poster' ? 'Poster · 36 × 42 in (PDF)' : j.kind==='wide' ? [j.options&&j.options.title&&'Title',j.options&&j.options.background&&'Background'].filter(Boolean).join(' + ')+' · 16 × 9'
+const gfxLabel=j=> j.kind==='concept' ? `Concept ${(j.options&&j.options.variation)||1}` : j.kind==='poster' ? 'Poster · 36 × 42 in (PDF)'
+  : j.kind==='wide' ? [j.options&&j.options.title!==false&&'Title',j.options&&j.options.background&&'Background'].filter(Boolean).join(' + ')+' · 16 × 9'
   : `Social post${(j.options&&j.options.variation>1)?' '+j.options.variation:''} · 4 × 5`;
 const gfxJobs=cid=>Object.values(S.gjobs).filter(j=>j.campaign_id===cid).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
 const gfxAge=j=>Date.now()-Date.parse(j.updated_at||j.created_at||0);
 const gfxStuck=j=>((j.status==='queued'||j.status==='working')&&gfxAge(j)>6*60e3) || (j.status==='composing'&&gfxAge(j)>3*60e3);
-const gfxBusy=j=>['queued','working','art','composing'].includes(j.status) && !gfxStuck(j);
-const gfxLoaded={}; let gfxTimer=null, gfxComposing=false;
+const gfxBusy=j=>(j.kind==='concept' ? ['queued','working'] : ['queued','working','art','composing']).includes(j.status) && !gfxStuck(j);
+// The current round of concepts: the newest batch that hasn't had one chosen yet.
+function gfxRound(cid){
+  const cs=gfxJobs(cid).filter(j=>j.kind==='concept'); if(!cs.length) return null;
+  const batch=cs[cs.length-1].options.batch; const list=cs.filter(j=>j.options.batch===batch);
+  if(list.some(j=>j.status==='chosen') || list.every(j=>j.status==='passed')) return null;
+  return { batch, list, plan:list[0].options.plan||{} };
+}
+const gfxChosen=cid=>gfxJobs(cid).filter(j=>j.kind==='concept'&&j.status==='chosen').slice(-1)[0]||null;
+const gfxLoaded={}, gfxPrev={}; let gfxTimer=null, gfxComposing=false;
+// A preview of a concept as a finished title graphic (made in the browser, not saved).
+function gfxPreview(j){
+  if(gfxPrev[j.id]) return gfxPrev[j.id]==='…'?'':gfxPrev[j.id];
+  if(j.status!=='art'||!j.art_path) return '';
+  gfxPrev[j.id]='…'; const c=S.campaigns[j.campaign_id];
+  GFX.makeTitle(c, fileUrl(j.art_path)).then(b=>{ gfxPrev[j.id]=URL.createObjectURL(b); render(); }).catch(()=>{ gfxPrev[j.id]=fileUrl(j.art_path); render(); });
+  return '';
+}
+function gfxStatus(j){
+  if(gfxStuck(j)) return `<span class="err">This is taking too long.</span>`;
+  if(j.status==='queued'||j.status==='working') return `<span class="spin" aria-hidden="true"></span> ${j.kind==='concept'?'Painting this concept…':'Creating artwork…'} usually 1–2 minutes`;
+  if(j.status==='art'||j.status==='composing') return j.kind==='concept'?'Ready to review':`<span class="spin" aria-hidden="true"></span> Adding the text and logo…`;
+  if(j.status==='done') return 'Saved to campaign files';
+  if(j.status==='chosen') return 'Chosen concept';
+  return `<span class="err">${esc(j.error||'Something went wrong.')}</span>`;
+}
 function renderGfxPanel(c){
-  const jobs=gfxJobs(c.id);
+  if(c._draft) return `<div class="field"><span class="lbl">AI graphics</span><span class="small muted">Submit the campaign first, then you can design graphics for it.</span></div>`;
   if(!gfxLoaded[c.id]){ gfxLoaded[c.id]=true; gfxRefresh(c.id); }
-  const statusOf=j=>{
-    if(gfxStuck(j)) return `<span class="err">This is taking too long.</span>`;
-    if(j.status==='queued'||j.status==='working') return `<span class="spin" aria-hidden="true"></span> Creating artwork… usually 1–2 minutes`;
-    if(j.status==='art'||j.status==='composing') return `<span class="spin" aria-hidden="true"></span> Adding the text and logo…`;
-    if(j.status==='done') return `Saved to campaign files`;
-    return `<span class="err">${esc(j.error||'Something went wrong.')}</span>`;
-  };
-  const rows=jobs.map(j=>`<div class="gjob ${j.status==='done'?'ok':''}"><div style="min-width:0;flex:1"><div class="gj-t">${esc(gfxLabel(j))}</div><div class="small muted">${statusOf(j)}</div></div>
+  const round=gfxRound(c.id), chosen=gfxChosen(c.id);
+  const outs=gfxJobs(c.id).filter(j=>j.kind!=='concept');
+  let h='';
+  if(round){
+    const ready=round.list.filter(j=>j.status==='art').length;
+    h+=`<div class="gconcepts"><div class="row" style="gap:8px"><strong style="flex:1;font-weight:500;color:var(--slate)">Design concepts</strong><button class="btn ghost sm" data-action="gfx-cancel" data-id="${esc(c.id)}">Start over</button></div>
+      <div class="gthumbs">${round.list.map(j=>{ const pv=gfxPreview(j); return `<button class="gthumb" data-action="gfx-review" data-id="${esc(c.id)}" aria-label="${esc(gfxLabel(j))}" style="${pv?`background-image:url('${esc(pv)}')`:''}">${pv?'':`<span>${j.status==='failed'||gfxStuck(j)?'!':'<span class="spin"></span>'}</span>`}</button>`; }).join('')}</div>
+      <div class="small muted">${ready?`${ready} of ${round.list.length} ready.`:'Painting the concepts. This usually takes 1–2 minutes.'}</div>
+      <button class="btn primary sm" data-action="gfx-review" data-id="${esc(c.id)}" ${ready||round.list.some(j=>j.status==='failed')?'':'disabled'}>Review concepts</button></div>`;
+  }
+  if(outs.length) h+=`<div class="gjobs">${outs.map(j=>`<div class="gjob ${j.status==='done'?'ok':''}"><div style="min-width:0;flex:1"><div class="gj-t">${esc(gfxLabel(j))}</div><div class="small muted">${gfxStatus(j)}</div></div>
     ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}
-    ${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('');
-  return `<div class="field"><span class="lbl">AI graphics</span>
-    ${c._draft?`<span class="small muted">Submit the campaign first, then you can design graphics for it.</span>`:`
-    ${rows?`<div class="gjobs">${rows}</div>`:''}
-    <div class="row" style="gap:8px"><button class="btn gold sm" data-action="gfx-open" data-id="${esc(c.id)}">✦ Design graphics</button>${jobs.length?`<button class="btn sm" data-action="gfx-more" data-id="${esc(c.id)}">+ Another social post</button>`:''}</div>
-    <span class="small muted" style="margin-top:6px">AI artwork with this campaign's title, date, place and the FBSS logo added. Finished graphics are saved to Campaign files.</span>`}</div>`;
+    ${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('')}</div>`;
+  return `<div class="field"><span class="lbl">AI graphics</span>${h}
+    <div class="row" style="gap:8px">${round?'':`<button class="btn gold sm" data-action="gfx-open" data-id="${esc(c.id)}">✦ Design graphics</button>`}${chosen&&!round?`<button class="btn sm" data-action="gfx-more" data-id="${esc(c.id)}">+ Another social post</button>`:''}</div>
+    ${round?'':`<span class="small muted" style="margin-top:6px">Start with two design concepts to choose from. Once you pick one, the poster, slides and social posts are made to match, with this campaign's title, date, place and the FBSS logo, and saved to Campaign files.</span>`}</div>`;
 }
 function renderGfxModal(m){
   const c=S.campaigns[m.id]; if(!c) return '';
-  const ck=(id,label,sub)=>`<label class="check"><input type="checkbox" id="gf-${id}" ${m.pick[id]?'checked':''} data-gfx-pick="${id}"><span>${label}<br><span class="small muted">${sub}</span></span></label>`;
   return `<h2 id="m-t">Design graphics</h2><p class="prose" style="margin:0">${esc(c.title||'Untitled campaign')}${c.date?' · '+esc(fmtRange(c)):''}</p>
-    <div class="stack" style="gap:10px">
-      ${ck('poster','Poster · 36 × 42 inches','Print-ready PDF')}
-      ${ck('title','Title graphic · 16 × 9','For screens and slides, with the event name')}
-      ${ck('background','Background graphic · 16 × 9','The same artwork with no text')}
-      <div class="row" style="gap:10px"><label class="check" style="flex:1"><input type="checkbox" id="gf-social" ${m.social>0?'checked':''} data-gfx-pick="social"><span>Social posts · 4 × 5<br><span class="small muted">For Facebook and Instagram, each with different artwork</span></span></label>
-        <input type="number" id="gf-count" min="1" max="6" value="${Math.max(1,m.social||1)}" style="width:72px" aria-label="How many social posts"></div>
-    </div>
+    <p class="small muted" style="margin:0">You'll get two design concepts first. Pick one (or ask for another), and these are made to match:</p>
+    ${gfxPickHtml(m)}
     <div class="field"><label class="lbl" for="gf-style">Style</label><select id="gf-style">${GFX_STYLES.map(([v,l])=>`<option value="${v}" ${m.style===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label class="lbl" for="gf-notes">Ideas for the artwork <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="gf-notes" rows="3" placeholder="e.g. candlelight and evergreen branches, a cozy winter feel">${esc(m.notes||'')}</textarea></div>
     <p class="small muted" style="margin:0">The artwork is made by OpenAI from the campaign's title and description. Your event details, fonts and logo are added on top so names and dates are always right. Each image costs a few cents; the poster costs a little more.</p>
-    <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Create graphics'}</button></div>`;
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Create 2 concepts'}</button></div>`;
+}
+function gfxPickHtml(m){
+  const ck=(id,label,sub)=>`<label class="check"><input type="checkbox" id="gf-${id}" ${m.pick[id]?'checked':''}><span>${label}<br><span class="small muted">${sub}</span></span></label>`;
+  return `<div class="stack" style="gap:10px">
+      ${ck('poster','Poster · 36 × 42 inches','Print-ready PDF')}
+      ${ck('title','Title graphic · 16 × 9','For screens and slides, with the event name')}
+      ${ck('background','Background graphic · 16 × 9','The same artwork with no text')}
+      <div class="row" style="gap:10px"><label class="check" style="flex:1"><input type="checkbox" id="gf-social" ${m.social>0?'checked':''}><span>Social posts · 4 × 5<br><span class="small muted">For Facebook and Instagram. You can add more later.</span></span></label>
+        <input type="number" id="gf-count" min="1" max="6" value="${Math.max(1,m.social||1)}" style="width:72px" aria-label="How many social posts"></div>
+    </div>`;
+}
+function gfxReadPick(){
+  const pick=k=>document.getElementById('gf-'+k).checked; const count=Math.min(6,Math.max(1,parseInt(document.getElementById('gf-count').value,10)||1));
+  return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?count:0 };
+}
+function renderGfxReview(m){
+  const c=S.campaigns[m.id]; const round=c&&gfxRound(m.id); if(!round) return `<h2 id="m-t">Design concepts</h2><p class="prose">These concepts are no longer waiting for a choice.</p><div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Close</button></div>`;
+  const busy=round.list.some(gfxBusy);
+  return `<h2 id="m-t">Choose a concept</h2><p class="prose" style="margin:0">${esc(c.title||'Untitled campaign')}. Shown as the title graphic; the poster and social posts will be made to match.</p>
+    <div class="gcards">${round.list.map(j=>{ const pv=gfxPreview(j); const ok=j.status==='art';
+      return `<div class="gcard"><div class="gprev" style="${pv?`background-image:url('${esc(pv)}')`:''}">${pv?`<a class="open" href="${esc(fileUrl(j.art_path))}" target="_blank" rel="noopener" aria-label="Open ${esc(gfxLabel(j))} artwork full size"></a>`:`<span class="small muted" style="padding:12px;text-align:center">${gfxStatus(j)}</span>`}</div>
+        <div class="row" style="gap:8px"><strong style="flex:1;font-weight:500">${esc(gfxLabel(j))}</strong>
+        ${ok?`<button class="btn primary sm" data-action="gfx-choose" data-id="${esc(j.id)}">Use this concept</button>`:''}
+        ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}</div></div>`; }).join('')}</div>
+    <div class="row"><button class="btn" data-action="gfx-another" data-id="${esc(m.id)}" ${busy?'disabled':''}>${round.list.length<3?'Try a third concept':'Try another concept'}</button>${busy?'<span class="small muted"><span class="spin"></span> Painting…</span>':''}<span class="spacer"></span><button class="btn" data-action="modal-close">Close</button></div>`;
+}
+function renderGfxApprove(m){
+  const j=S.gjobs[m.id]; if(!j) return '';
+  return `<h2 id="m-t">Make the graphics</h2><p class="prose" style="margin:0">Using ${esc(gfxLabel(j).toLowerCase())}. Choose what to make:</p>
+    ${gfxPickHtml(m)}
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-action="gfx-review" data-id="${esc(j.campaign_id)}">Back</button><button class="btn primary" data-action="gfx-approve-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Create graphics'}</button></div>`;
 }
 async function gfxRefresh(cid){
   const { data, error } = await sb.from('graphics_jobs').select('*').eq('campaign_id',cid);
@@ -1171,20 +1245,25 @@ async function gfxCall(jobId){
   const j=await res.json().catch(()=>({}));
   if(!res.ok && res.status!==409) throw new Error(j.error||`The graphics service answered ${res.status}.`);
 }
+// Add rows and start the artwork. Rows given an artPath already have their artwork (the chosen concept).
 async function gfxStart(cid, list){
   const rows=list.map(o=>({ campaign_id:cid, kind:o.kind, options:o.options, status:'queued' }));
   const { data, error } = await sb.from('graphics_jobs').insert(rows).select();
   if(error) throw error;
-  for(const j of data) S.gjobs[j.id]=j;
-  render(true); gfxSchedule();
-  const results=await Promise.allSettled(data.map(j=>gfxCall(j.id)));
+  const toPaint=[];
+  for(const [i,j] of data.entries()){
+    if(list[i].artPath){ const { data:u } = await sb.from('graphics_jobs').update({ status:'art', art_path:list[i].artPath, updated_at:new Date().toISOString() }).eq('id',j.id).select(); S.gjobs[j.id]=(u&&u[0])||{...j,status:'art',art_path:list[i].artPath}; }
+    else { S.gjobs[j.id]=j; toPaint.push(j); }
+  }
+  render(true); gfxSchedule(); gfxCompose();
+  const results=await Promise.allSettled(toPaint.map(j=>gfxCall(j.id)));
   const bad=results.find(r=>r.status==='rejected');
-  if(bad){ const msg=bad.reason.message; for(const [i,r] of results.entries()) if(r.status==='rejected'){ const j=data[i]; await sb.from('graphics_jobs').update({ status:'failed', error:msg, updated_at:new Date().toISOString() }).eq('id',j.id); S.gjobs[j.id]={...j, status:'failed', error:msg}; } toast(msg); render(true); }
+  if(bad){ const msg=bad.reason.message; for(const [i,r] of results.entries()) if(r.status==='rejected'){ const j=toPaint[i]; await sb.from('graphics_jobs').update({ status:'failed', error:msg, updated_at:new Date().toISOString() }).eq('id',j.id); S.gjobs[j.id]={...j, status:'failed', error:msg}; } toast(msg); render(true); }
 }
-// Finish any artwork that's ready: claim it, add the text, upload, and attach to the campaign.
+// Finish any deliverable whose artwork is ready: claim it, add the text, upload, and attach to the campaign.
 async function gfxCompose(){
   if(gfxComposing) return; const cid=V.view==='campaign'&&V.campaignId; if(!cid) return;
-  const j=gfxJobs(cid).find(x=>x.status==='art' || (x.status==='composing'&&gfxAge(x)>3*60e3)); if(!j) return;
+  const j=gfxJobs(cid).find(x=>x.kind!=='concept' && (x.status==='art' || (x.status==='composing'&&gfxAge(x)>3*60e3))); if(!j) return;
   gfxComposing=true;
   try{
     const { data:claimed } = await sb.from('graphics_jobs').update({ status:'composing', updated_at:new Date().toISOString() }).eq('id',j.id).eq('status',j.status).eq('updated_at',j.updated_at).select();
