@@ -116,7 +116,7 @@ Steps:
 Meta may ask you to complete **Business Verification** or **App Review** for these permissions. Apps used only by the business that owns them often work without review, but if posting fails with a permissions error, follow the instructions in the Meta developer dashboard.
 
 **How posting works once connected:**
-- Open any Facebook or Instagram destination. Click **Post now**, or tick **Post automatically**. Automatic posts go out at the destination's date and time, checked every 5 minutes, but **only after it's marked Approved or Scheduled**.
+- Open any Facebook or Instagram destination. Click **Post now**, or tick **Post automatically**. Automatic posts go out at the destination's date and time, checked every 5 minutes, but **only after it's marked Scheduled**.
 - When something posts, its status changes to **Posted** with a **View post** link.
 - If something fails, the reason shows on the destination and under **My work → Needs attention**. Fix the problem and click **Try again**.
 - Instagram needs at least one photo. Photos added in the app are converted to JPEG automatically, as Instagram requires. Multiple photos become a carousel (up to 10).
@@ -154,8 +154,8 @@ Each destination has an **Assigned to** person. **It's due on the day it's sched
 ## Statuses
 
 - **Task destinations** (email, slides, bulletin, announcements, text, website and anything else) are just tasks: **Scheduled** until someone marks them **Done**. Done items drop off that person's My work list and don't get reminders.
-- **Social, Facebook and Instagram** destinations have an approval step: **Draft → In review → Approved → Posted**. Only an **Approved** post goes out automatically. **Scheduled** is for posts someone has scheduled by hand in Meta Business Suite.
-- The calendar's summary shows how many social posts still need approval. Campaign progress counts what's done or posted.
+- **Social, Facebook and Instagram** destinations are **Draft → Scheduled → Posted**. Marking a post **Scheduled** approves it: with **Post automatically** ticked, it goes out at its date and time.
+- The calendar's summary shows how many social posts are still drafts. Campaign progress counts what's done or posted.
 
 ## Dates and times
 

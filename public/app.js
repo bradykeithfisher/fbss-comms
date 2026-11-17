@@ -30,7 +30,7 @@ const GUIDE = {
 };
 // Social destinations (Facebook, Instagram, Social) go through approval, because approved posts go out automatically.
 // Every other destination is simply a task: Scheduled until someone marks it Done.
-const STATUSES = [['draft','Draft'],['review','In review'],['approved','Approved'],['scheduled','Scheduled'],['posted','Posted']];
+const STATUSES = [['draft','Draft'],['scheduled','Scheduled'],['posted','Posted']];   // social posts: Scheduled ones post automatically
 const TASK_STATUSES = [['scheduled','Scheduled'],['posted','Done']];
 const PALETTE = ['#91412D','#B47E3D','#6B6F57','#5F7478','#414A55','#7A5232','#A35A43','#4F6B4A'];
 const DEFAULT_CHANNELS = [
@@ -375,7 +375,7 @@ function renderCalendar(){
     <select class="compact" id="f-chan" data-ui="fChan" aria-label="Filter by destination"><option value="">All destinations</option>${channelOptions(V.fChan)}</select>
     <select class="compact" id="f-person" data-ui="fPerson" aria-label="Filter by person"><option value="">Everyone</option><option value="none" ${V.fPerson==='none'?'selected':''}>Unassigned</option>${memberOptions(V.fPerson,false)}</select>
   </div>
-  <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> social to approve</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> done</div></div>`;
+  <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> social drafts</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> done</div></div>`;
   if(!Object.keys(S.campaigns).length && !Object.keys(S.dests).length) return toolbar+`<div class="empty"><img src="/assets/mark-color.svg" alt=""><p><strong>Nothing scheduled yet.</strong></p><p>Create a campaign for an upcoming event, or add a one-off post that isn't part of a campaign.</p><div class="row" style="justify-content:center"><button class="btn primary" data-action="new-campaign">+ New campaign</button><button class="btn dark" data-action="new-oneoff">+ One-off post</button></div></div>`;
   if(V.calMode==='list'){
     let h=`<div class="agenda">`;
@@ -501,7 +501,7 @@ function renderCampaign(id){
         <button class="btn dark" data-action="add-dests" data-id="${I}">+ Add destinations</button></div>
         ${ds.length?`<div class="dlist">${ds.map(d=>drow(d,false)).join('')}</div>`:`<div class="empty">No destinations yet. Drag them onto the advertising calendar above, or use Add destinations.</div>`}
         <div class="footbar"><span class="pill st-${done===ds.length&&ds.length?'approved':'review'}">${done} of ${ds.length} done</span><span class="muted small">Tasks are done when marked Done; social posts when posted</span>
-        ${ds.some(d=>isSocialDest(d)&&st(d)==='review')?`<span class="spacer"></span><button class="btn sm" data-action="approve-all" data-id="${I}">Approve all social in review</button>`:''}</div>
+        ${ds.some(d=>isSocialDest(d)&&st(d)==='draft')?`<span class="spacer"></span><button class="btn sm" data-action="approve-all" data-id="${I}">Schedule all social drafts</button>`:''}</div>
       </section>
     </div>
   </div>`;
@@ -726,7 +726,7 @@ function renderDrawer(){
         return `<span class="small muted" style="margin:10px 0 6px">From campaign files (click to add):</span><div class="photos">${avail.map(f=>`<button class="photo ${isVideo(f.path)?'vid':''}" style="cursor:pointer" data-action="attach-file" data-id="${id}" data-file="${esc(f.path)}" title="Add ${esc(f.name)}">${mediaTag(f.path)}</button>`).join('')}</div>`; })()}
     </div>`;
   if(k.social) html += renderSocial(d,c,ch,previewImg,s);
-  html+=`<div class="field"><label class="lbl" for="d-notes-${id}">Notes for the team</label><textarea id="d-notes-${id}" data-bind="dest:notes" data-id="${id}" rows="3" placeholder="Approvals, links, who to tag…">${esc(d.notes)}</textarea></div>
+  html+=`<div class="field"><label class="lbl" for="d-notes-${id}">Notes for the team</label><textarea id="d-notes-${id}" data-bind="dest:notes" data-id="${id}" data-mentions="1" rows="3" placeholder="Type @ to tag someone. They'll get an email with your note.">${esc(d.notes)}</textarea></div>
     <div class="row"><button class="btn danger sm" data-action="delete-dest" data-id="${id}">Delete this destination</button><span class="spacer"></span><button class="btn primary" data-action="close-drawer">Done</button></div>
   </div></aside>`;
   return html;
@@ -754,7 +754,7 @@ function renderSocial(d,c,ch,previewImg,s){
     box=`<div class="postbox ${d.publishError?'err':''}"><span class="lbl" style="margin:0">Post to ${where}</span>
       ${links?`<div class="row"><span class="small">Already posted:</span>${links}</div>`:''}
       ${d.publishError?`<div style="color:var(--bad)"><strong>Last try failed:</strong> ${esc(d.publishError)}</div><div><button class="btn sm" data-action="clear-error" data-id="${id}">Try again</button>${links?' <span class="small muted">Only the part that failed is retried.</span>':''}</div>`:''}
-      <label class="check"><input type="checkbox" id="d-auto-${id}" data-bind="dest:autoPublish" data-id="${id}" ${d.autoPublish?'checked':''}><span>Post automatically on ${esc(when)}<br><span class="small muted">Only posts once its status is Approved or Scheduled.</span></span></label>
+      <label class="check"><input type="checkbox" id="d-auto-${id}" data-bind="dest:autoPublish" data-id="${id}" ${d.autoPublish?'checked':''}><span>Post automatically on ${esc(when)}<br><span class="small muted">Only posts once its status is Scheduled.</span></span></label>
       <div class="row"><button class="btn primary sm" data-action="post-now" data-id="${id}" ${V.busy?'disabled':''}>${V.busy?'Posting…':'Post now'}</button>${needsIG?'<span class="small muted">Instagram needs at least one photo.</span>':''}</div></div>`;
   } else {
     box=`<div class="postbox"><span class="lbl" style="margin:0">Publish by hand</span>
@@ -850,9 +850,10 @@ function defaultTime(chanId){ return hasTime(chanId) ? '09:00' : ''; }
 const isSocialDest = d => hasTime(d.channelId);
 const statusesFor = d => isSocialDest(d) ? STATUSES : TASK_STATUSES;
 // The status to show: tasks are only ever Scheduled or Done, whatever older data says.
-const st = d => isSocialDest(d) ? (d.status||'draft') : (d.status==='posted' ? 'posted' : 'scheduled');
+// Social posts are Draft, Scheduled or Posted (older In review counts as Draft, older Approved as Scheduled).
+const st = d => isSocialDest(d) ? ({review:'draft', approved:'scheduled'}[d.status] || d.status || 'draft') : (d.status==='posted' ? 'posted' : 'scheduled');
 const isDone = d => st(d)==='posted';
-const needsApproval = d => isSocialDest(d) && ['draft','review'].includes(st(d));
+const needsApproval = d => isSocialDest(d) && st(d)==='draft';
 const statusLabel = d => (statusesFor(d).find(x=>x[0]===st(d))||statusesFor(d)[0])[1];
 const timeTxt = (d, sep=' · ') => hasTime(d.channelId) && d.time ? sep+fmtT(d.time) : '';
 function openAddDests(cid){
@@ -1028,7 +1029,7 @@ const A = {
   'delete-campaign'(el){ const c=S.campaigns[el.dataset.id]; confirmBox('Delete this campaign?', `"${c.title}" and its ${destsOf(c.id).length} destinations will be removed for everyone.`, ()=>{ removeCampaign(c.id); location.hash='campaigns'; }); },
   'delete-dest'(el){ const d=S.dests[el.dataset.id]; confirmBox('Delete this destination?', `${channelById(d.channelId).name} for "${campOf(d).title}" will be removed for everyone.`, ()=>{ V.openDest=null; removeDest(d.id); }); },
   'set-status'(el){ const d=S.dests[el.dataset.id]; if(!d) return; d.status=el.dataset.status; saveDest(d); render(true); if(!isSocialDest(d) && d.status==='posted') toast('Marked done'); },
-  'approve-all'(el){ for(const d of destsOf(el.dataset.id)) if(isSocialDest(d)&&st(d)==='review'){ d.status='approved'; saveDest(d); } render(true); },
+  'approve-all'(el){ for(const d of destsOf(el.dataset.id)) if(isSocialDest(d)&&st(d)==='draft'){ d.status='scheduled'; saveDest(d); } render(true); },
   'set-color'(el){ const c=S.campaigns[el.dataset.id]; c.color=el.dataset.color; saveCampaign(c); render(true); },
   'remove-cover'(el){ const c=S.campaigns[el.dataset.id]; const p=c.coverPath; c.coverPath=''; saveCampaign(c); render(true); deleteFileIfUnused(p); },
   'remove-photo'(el){ const d=S.dests[el.dataset.id]; const p=el.dataset.img; d.imagePaths=(d.imagePaths||[]).filter(i=>i!==p); saveDest(d); render(true); deleteFileIfUnused(p); },
@@ -1047,7 +1048,7 @@ const A = {
     const apply=()=>{ d.copy=t; saveDest(d); render(true); toast('Campaign description added'); };
     if((d.copy||'').trim() && d.copy.trim()!==t) confirmBox('Replace the current copy?', 'This swaps what\'s written here for the campaign\'s description.', apply, 'Replace');
     else apply(); },
-  'ai-use'(el){ const d=S.dests[el.dataset.id], a=aiState(d.id), o=a.options[+el.dataset.i]; if(!o) return; const k=kindOf(channelById(d.channelId)); d.copy=o.text; if(k.head&&o.headline) d.headline=o.headline; if(isSocialDest(d) && st(d)==='draft') d.status='review'; saveDest(d); a.open=false; a.options=[]; render(true); toast(isSocialDest(d)?'Copy added and marked In review':'Copy added'); },
+  'ai-use'(el){ const d=S.dests[el.dataset.id], a=aiState(d.id), o=a.options[+el.dataset.i]; if(!o) return; const k=kindOf(channelById(d.channelId)); d.copy=o.text; if(k.head&&o.headline) d.headline=o.headline; saveDest(d); a.open=false; a.options=[]; render(true); toast('Copy added'); },
   async 'post-now'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const ch=channelById(d.channelId);
     confirmBox(`Post to ${ch.kind==='social'?'Facebook and Instagram':kindOf(ch).label} now?`, 'This publishes the caption and photos to the church\'s page right away.', async ()=>{
       flushAll(); V.busy=true; render(true);
@@ -1075,6 +1076,51 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){ if(V.modal){ V.modal=null; render(true); } else if(V.openDest){ V.openDest=null; render(true); } }
   if((e.key==='Enter'||e.key===' ') && e.target.matches && e.target.matches('[role=button][data-action]')){ e.preventDefault(); e.target.click(); }
 });
+
+/* ---------- @mentions in notes ----------
+   Typing @ in Notes for the team suggests staff members. When you leave the box, anyone newly tagged
+   is emailed the note (by the notify-mention function). */
+let mention=null;   // { el, box, start, items, i }
+function mentionClose(){ if(mention&&mention.box) mention.box.remove(); mention=null; }
+const mentionsIn = text => { const t=String(text||'').toLowerCase(); return teamList().filter(m=>t.includes('@'+m.name.toLowerCase())).map(m=>m.id); };
+function mentionCheck(el){
+  const pos=el.selectionStart, m=/(^|\s)@([^\s@]{0,30})$/.exec(el.value.slice(0,pos));
+  if(!m){ mentionClose(); return; }
+  const q=m[2].toLowerCase();
+  const items=teamList().filter(t=>t.name.toLowerCase().startsWith(q) || t.name.toLowerCase().split(/\s+/).some(w=>w.startsWith(q))).slice(0,6);
+  if(!items.length){ mentionClose(); return; }
+  if(!mention||mention.el!==el){ mentionClose(); const box=document.createElement('div'); box.className='mentionbox'; box.setAttribute('role','listbox'); box.setAttribute('aria-label','Tag someone'); document.body.appendChild(box); mention={el,box,i:0}; }
+  mention.start=pos-m[2].length-1; mention.items=items; mention.i=Math.min(mention.i,items.length-1);
+  const r=el.getBoundingClientRect(), b=mention.box;
+  b.style.left=Math.min(r.left, innerWidth-250)+'px'; b.style.top=(r.bottom+4)+'px';
+  b.innerHTML=items.map((t,i)=>`<button type="button" role="option" aria-selected="${i===mention.i}" class="${i===mention.i?'on':''}" data-mention-i="${i}">${av(t.id)}<span>${esc(t.name)}</span></button>`).join('');
+}
+function mentionPick(i){
+  const m=mention; if(!m) return; const t=m.items[i], el=m.el; const pos=el.selectionStart; const ins='@'+t.name+' ';
+  el.value=el.value.slice(0,m.start)+ins+el.value.slice(pos); const c=m.start+ins.length;
+  mentionClose(); el.focus(); el.setSelectionRange(c,c); el.dispatchEvent(new Event('input',{bubbles:true}));
+}
+document.addEventListener('mousedown', e=>{ const b=e.target.closest&&e.target.closest('[data-mention-i]'); if(b){ e.preventDefault(); mentionPick(+b.dataset.mentionI); } else if(mention && !e.target.closest('.mentionbox')) mentionClose(); });
+document.addEventListener('keydown', e=>{
+  if(!mention || e.target!==mention.el) return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); mention.i=(mention.i+(e.key==='ArrowDown'?1:mention.items.length-1))%mention.items.length; mentionCheck(mention.el); }
+  else if(e.key==='Enter'||e.key==='Tab'){ e.preventDefault(); mentionPick(mention.i); }
+  else if(e.key==='Escape'){ e.preventDefault(); e.stopImmediatePropagation(); mentionClose(); }
+}, true);
+document.addEventListener('scroll', ()=>{ if(mention) mentionClose(); }, true);
+document.addEventListener('focusin', e=>{ const el=e.target; if(el.dataset&&el.dataset.mentions) el._mentionsBefore=mentionsIn(el.value); });
+document.addEventListener('focusout', e=>{ const el=e.target; if(!(el.dataset&&el.dataset.mentions)) return;
+  setTimeout(()=>{ if(mention&&mention.el===el&&document.activeElement!==el) mentionClose(); }, 150);
+  const before=el._mentionsBefore||[]; const fresh=mentionsIn(el.value).filter(id=>!before.includes(id) && id!==(session&&session.user.id));
+  el._mentionsBefore=mentionsIn(el.value);
+  if(fresh.length) notifyMentions(el.dataset.id, fresh);
+});
+async function notifyMentions(destId, userIds){
+  await waitForSaves();
+  try{ const r=await api('notify-mention',{destId, userIds});
+    if(r.emailed){ const names=userIds.map(id=>(memberById(id)||{}).name).filter(Boolean); toast(`Emailed ${names.length===1?names[0]:names.length+' people'} your note`); } }
+  catch(e){ toast('Note saved, but the email didn\'t send: '+e.message); }
+}
 
 /* ---------- forms ---------- */
 document.addEventListener('submit', async e=>{
@@ -1125,6 +1171,7 @@ function onField(el, committed){
 }
 document.addEventListener('input', e=>{
   const el=e.target;
+  if(el.dataset.mentions) mentionCheck(el);
   if(el.dataset.bind){ const t=el.type; const committed = el.tagName==='SELECT'||t==='date'||t==='time'||t==='checkbox'; if(!committed) onField(el,false); return; }
   if(el.dataset.ai){ aiState(el.dataset.id)[el.dataset.ai]=el.value; return; }
   if(el.id==='icon-q') iconSearch(el.value);
