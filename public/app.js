@@ -4,15 +4,15 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 
 /* ---------- constants ---------- */
 const KINDS = {
-  facebook:{label:'Facebook', color:'#3E5C8A', abbr:'FB', limit:2000, social:true},
-  instagram:{label:'Instagram', color:'#94506B', abbr:'IG', limit:2200, social:true},
-  email:{label:'Email', color:'#5F7478', abbr:'EM', head:'Subject line'},
-  slides:{label:'Service slides', color:'#6B6F57', abbr:'SL', head:'Slide headline'},
-  bulletin:{label:'Bulletin / print', color:'#B47E3D', abbr:'BU', head:'Headline'},
-  announcement:{label:'Spoken announcement', color:'#91412D', abbr:'AN'},
-  text:{label:'Text message', color:'#4F6B4A', abbr:'TX', limit:160},
-  web:{label:'Website', color:'#414A55', abbr:'WB', head:'Page title'},
-  other:{label:'Other', color:'#7D7468', abbr:'••', head:'Headline'}
+  facebook:{label:'Facebook', color:'#3E5C8A', abbr:'FB', icon:'simple-icons:facebook', limit:2000, social:true},
+  instagram:{label:'Instagram', color:'#94506B', abbr:'IG', icon:'simple-icons:instagram', limit:2200, social:true},
+  email:{label:'Email', color:'#5F7478', abbr:'EM', icon:'lucide:mail', head:'Subject line'},
+  slides:{label:'Service slides', color:'#6B6F57', abbr:'SL', icon:'lucide:presentation', head:'Slide headline'},
+  bulletin:{label:'Bulletin / print', color:'#B47E3D', abbr:'BU', icon:'lucide:newspaper', head:'Headline'},
+  announcement:{label:'Spoken announcement', color:'#91412D', abbr:'AN', icon:'lucide:megaphone'},
+  text:{label:'Text message', color:'#4F6B4A', abbr:'TX', icon:'lucide:message-square', limit:160},
+  web:{label:'Website', color:'#414A55', abbr:'WB', icon:'lucide:globe', head:'Page title'},
+  other:{label:'Other', color:'#7D7468', abbr:'••', icon:'lucide:sparkles', head:'Headline'}
 };
 const GUIDE = {
   facebook:'Facebook post. Conversational, 40-110 words, short paragraphs, clear details, ends with an invitation or call to action.',
@@ -40,6 +40,15 @@ const DEFAULT_CHANNELS = [
 ];
 const DEFAULT_VOICE = 'Passionate, Gospel-focused, vibrant, connected, authentic, equipping, familial, understanding, committed and unified. We write like family inviting a neighbor: warm, personal and hopeful, never salesy. Use plain words, include the date, time and place, and end with a simple invitation. Tagline: For Hopkins County. For the Gospel.';
 const META_COMPOSER = 'https://business.facebook.com/latest/composer';
+// Icons come from Iconify (api.iconify.design): Lucide for general icons, Simple Icons for brand logos.
+const ICON_SETS = 'lucide,simple-icons';
+const SUGGESTED_ICONS = ['simple-icons:facebook','simple-icons:instagram','simple-icons:youtube','simple-icons:tiktok','simple-icons:x','simple-icons:threads','simple-icons:spotify','simple-icons:vimeo',
+  'lucide:mail','lucide:mails','lucide:newspaper','lucide:presentation','lucide:monitor','lucide:tv','lucide:megaphone','lucide:mic','lucide:message-square','lucide:message-circle','lucide:smartphone','lucide:globe',
+  'lucide:link','lucide:calendar','lucide:calendar-days','lucide:church','lucide:cross','lucide:book-open','lucide:baby','lucide:users','lucide:heart','lucide:hand-heart','lucide:music','lucide:radio',
+  'lucide:printer','lucide:file-text','lucide:image','lucide:camera','lucide:video','lucide:clapperboard','lucide:podcast','lucide:bell','lucide:signpost','lucide:flag','lucide:star','lucide:sparkles',
+  'lucide:coffee','lucide:utensils','lucide:gift','lucide:graduation-cap','lucide:map-pin','lucide:qr-code','lucide:ticket','lucide:clipboard-list'];
+const iconUrl = (icon, color='#ffffff') => { const [p,n]=String(icon||'lucide:sparkles').split(':'); return `https://api.iconify.design/${encodeURIComponent(p)}/${encodeURIComponent(n||'')}.svg?color=${encodeURIComponent(color)}`; };
+const iconOf = ch => ch.icon || (KINDS[ch.kind]||KINDS.other).icon;
 
 /* ---------- helpers ---------- */
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -66,8 +75,8 @@ const safeName = n => String(n||'file').normalize('NFKD').replace(/[^\w.\-]+/g,'
 
 /* ---------- state ---------- */
 let sb=null, CFG=null, session=null, rtChannel=null;
-const S = { settings:{channels:clone(DEFAULT_CHANNELS), voice:DEFAULT_VOICE, handle:'First Baptist Sulphur Springs'}, campaigns:{}, dests:{}, team:{}, loaded:false, social:null };
-const V = { screen:'boot', view:'calendar', campaignId:null, calMode: ls('cc.calMode')||'week', anchor:new Date(), fChan:'', fPerson:'', openDest:null, modal:null, ai:{}, workPerson:'', authMsg:'', authErr:'', authMode:'login', busy:false, dragging:false };
+const S = { settings:{channels:clone(DEFAULT_CHANNELS), voice:DEFAULT_VOICE, handle:'First Baptist Sulphur Springs'}, campaigns:{}, dests:{}, team:{}, requests:{}, loaded:false, social:null };
+const V = { screen:'boot', view:'calendar', campaignId:null, calMode: ls('cc.calMode')||'week', anchor:new Date(), fChan:'', fPerson:'', openDest:null, modal:null, ai:{}, workPerson:'', reqFilter:'new', requestId:null, pendingDest:null, authMsg:'', authErr:'', authMode:'login', busy:false, dragging:false };
 const settings = () => S.settings;
 const me = () => session && S.team[session.user.id];
 const isAdmin = () => !!(me() && me().role==='admin');
@@ -88,9 +97,9 @@ const campToRow = c => ({ id:c.id, title:c.title||'Untitled campaign', start_dat
   location:c.location||'', description:c.description||'', ministry:c.ministry||'', link:c.link||'', color:c.color||PALETTE[0], cover_path:c.coverPath||'', files:c.files||[] });
 const rowToDest = r => ({ id:r.id, campaignId:r.campaign_id, channelId:r.channel_id, date:r.publish_date||'', time:t5(r.publish_time), assigneeId:r.assignee_id||'', status:r.status||'draft',
   headline:r.headline||'', copy:r.copy||'', notes:r.notes||'', imagePaths:Array.isArray(r.image_paths)?r.image_paths:[], autoPublish:!!r.auto_publish,
-  publishedAt:r.published_at||'', externalUrl:r.external_url||'', publishError:r.publish_error||'' });
+  publishedAt:r.published_at||'', externalUrl:r.external_url||'', publishError:r.publish_error||'', dueDate:r.due_date||'' });
 const destToRow = d => ({ id:d.id, campaign_id:d.campaignId, channel_id:d.channelId, publish_date:d.date||null, publish_time:d.time||null, assignee_id:d.assigneeId||null, status:d.status||'draft',
-  headline:d.headline||'', copy:d.copy||'', notes:d.notes||'', image_paths:d.imagePaths||[], auto_publish:!!d.autoPublish });
+  headline:d.headline||'', copy:d.copy||'', notes:d.notes||'', image_paths:d.imagePaths||[], auto_publish:!!d.autoPublish, due_date:d.dueDate||null });
 const rowToMember = r => ({ id:r.id, name:r.full_name || (r.email||'').split('@')[0] || 'Staff member', email:r.email||'', color:r.color||'#5F7478', role:r.role||'editor' });
 
 /* ---------- saving ---------- */
@@ -125,6 +134,13 @@ const saveDest = (d,delay) => { S.dests[d.id]=d; delay ? scheduleSave('d:'+d.id,
 const saveSettings = delay => delay ? scheduleSave('s:1',delay) : writeKey('s:1');
 const removeDest = id => { delete S.dests[id]; writeKey('d:'+id); };
 const removeCampaign = id => { for(const d of destsOf(id)) delete S.dests[d.id]; delete S.campaigns[id]; writeKey('c:'+id); };
+
+function defaultDue(d){ const p=parseYmd(d.date); if(!p) return ''; let due=addDays(p,-2); if(ymd(due)<todayStr()) due=new Date(); if(ymd(due)>d.date) return d.date; return ymd(due); }
+async function notifyAssigned(id){
+  for(let i=0;i<50 && (dirty['d:'+id]||inflight['d:'+id]);i++) await new Promise(r=>setTimeout(r,150)); // wait for the save to land
+  try{ const r=await api('notify-assigned',{id}); if(r.ok){ const d=S.dests[id]; const m=d&&memberById(d.assigneeId); toast(`Emailed ${m?m.name:'them'} about the assignment`); } }
+  catch(e){ toast('Assignment saved, but the email failed: '+e.message); }
+}
 
 /* ---------- server calls ---------- */
 async function api(path, body, method){
@@ -163,16 +179,20 @@ async function startApp(){
 }
 function teardown(){ if(rtChannel){ sb.removeChannel(rtChannel); rtChannel=null; } S.campaigns={}; S.dests={}; S.team={}; S.loaded=false; V.openDest=null; V.modal=null; }
 async function loadAll(){
-  const [c,d,s,p] = await Promise.all([
+  const [c,d,s,p,rq] = await Promise.all([
     sb.from('campaigns').select('*'), sb.from('destinations').select('*'),
-    sb.from('app_settings').select('data').eq('id',1).maybeSingle(), sb.from('profiles').select('id,email,full_name,color,role')]);
+    sb.from('app_settings').select('data').eq('id',1).maybeSingle(), sb.from('profiles').select('id,email,full_name,color,role'),
+    sb.from('requests').select('*').order('created_at',{ascending:false})]);
   const err = c.error||d.error||s.error||p.error;
+  S.requests = Object.fromEntries(((rq&&rq.data)||[]).map(r=>[r.id,r]));
   if(err){ toast('Could not load data: '+err.message); }
   S.campaigns = Object.fromEntries((c.data||[]).map(r=>[r.id,rowToCamp(r)]));
   S.dests = Object.fromEntries((d.data||[]).map(r=>[r.id,rowToDest(r)]));
   S.team = Object.fromEntries((p.data||[]).map(r=>[r.id,rowToMember(r)]));
   applySettings(s.data && s.data.data);
-  S.loaded=true; render();
+  S.loaded=true;
+  if(V.pendingDest){ const pd=S.dests[V.pendingDest]; if(pd){ V.view='campaign'; V.campaignId=pd.campaignId; V.openDest=pd.id; } V.pendingDest=null; }
+  render();
 }
 function applySettings(data){ const x = data||{}; S.settings = { handle:x.handle||'First Baptist Sulphur Springs', voice:x.voice||DEFAULT_VOICE, channels:Array.isArray(x.channels)&&x.channels.length?x.channels:clone(DEFAULT_CHANNELS) }; }
 function subscribe(){
@@ -186,6 +206,8 @@ function subscribe(){
       else S.dests[id]=incoming;
       render(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'}, p=>{ if(dirty['s:1']) return; if(p.new) applySettings(p.new.data); render(); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'requests'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id);
+      if(p.eventType==='DELETE') delete S.requests[id]; else S.requests[id]=p.new; render(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'profiles'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id); if(dirty['p:'+id]) return;
       if(p.eventType==='DELETE') delete S.team[id]; else S.team[id]=rowToMember(p.new); render(); })
     .subscribe();
@@ -197,10 +219,12 @@ function subscribe(){
 function route(){
   const h=(location.hash||'').replace('#','');
   if(h.startsWith('campaign-')){ V.view='campaign'; V.campaignId=h.slice(9); }
-  else if(['calendar','campaigns','my-work','settings'].includes(h)) V.view=h;
+  else if(h.startsWith('request-')){ V.view='requests'; V.requestId=h.slice(8); }
+  else if(h.startsWith('dest-')){ const id=h.slice(5); const d=S.dests[id]; if(d){ V.view='campaign'; V.campaignId=d.campaignId; V.openDest=id; } else { V.view='calendar'; V.pendingDest=id; } }
+  else if(['calendar','campaigns','my-work','settings','requests'].includes(h)) V.view=h;
   else V.view='calendar';
 }
-window.addEventListener('hashchange', ()=>{ if(V.screen!=='app') return; route(); V.openDest=null; render(true); window.scrollTo(0,0); });
+window.addEventListener('hashchange', ()=>{ if(V.screen!=='app') return; V.openDest=null; route(); render(true); window.scrollTo(0,0); });
 
 /* ---------- render core ---------- */
 let pendingRender=false;
@@ -258,7 +282,7 @@ function renderHeader(){
   const tab=(h,l,on)=>`<a href="#${h}" class="${on?'on':''}">${l}</a>`; const m=me();
   return `<header class="topbar">
     <a href="#calendar" aria-label="Calendar home"><img class="logo" src="/assets/logo-horizontal.svg" alt="First Baptist Sulphur Springs"></a>
-    <nav class="tabs" aria-label="Main">${tab('calendar','Calendar',V.view==='calendar')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign')}${tab('my-work','My work',V.view==='my-work')}${tab('settings','Settings',V.view==='settings')}</nav>
+    <nav class="tabs" aria-label="Main">${tab('calendar','Calendar',V.view==='calendar')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign')}${tab('my-work','My work',V.view==='my-work')}<a href="#requests" class="${V.view==='requests'?'on':''}">Requests${(()=>{ const n=Object.values(S.requests).filter(r=>r.status==='new').length; return n?`<span class="count">${n}</span>`:''; })()}</a>${tab('settings','Settings',V.view==='settings')}</nav>
     <button class="btn primary" data-action="new-campaign">+ New campaign</button>
     <div class="usermenu">${m?av(m.id,'lg'):''}<span class="nm">${esc(m?m.name:'')}</span><button class="btn ghost sm" data-action="sign-out">Sign out</button></div>
   </header>`;
@@ -268,14 +292,15 @@ function renderView(){
   if(V.view==='campaigns') return renderCampaigns();
   if(V.view==='campaign') return renderCampaign(V.campaignId);
   if(V.view==='my-work') return renderWork();
+  if(V.view==='requests') return renderRequests();
   if(V.view==='settings') return renderSettings();
   return renderCalendar();
 }
-function kb(ch, cls=''){ const k=kindOf(ch); return `<span class="kb ${cls}" style="--k:${k.color}" title="${esc(ch.name)}">${esc(k.abbr)}</span>`; }
+function kb(ch, cls=''){ const k=kindOf(ch); return `<span class="kb ${cls}" style="--k:${k.color}" title="${esc(ch.name)}"><img src="${esc(iconUrl(iconOf(ch)))}" alt="" loading="lazy" onerror="this.remove()"><b>${esc(k.abbr)}</b></span>`; }
 function av(memberId, cls=''){ const m=memberById(memberId); if(!m) return `<span class="av none ${cls}" title="Unassigned">?</span>`; return `<span class="av ${cls}" style="--m:${esc(m.color)}" title="${esc(m.name)}">${esc(initials(m.name))}</span>`; }
 function pill(st){ const s=STATUSES.find(x=>x[0]===st)||STATUSES[0]; return `<span class="pill st-${s[0]}">${s[1]}</span>`; }
-function chip(d,label){ const c=campOf(d), ch=channelById(d.channelId); const s=d.status||'draft';
-  return `<div class="chip" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${esc(c.title)} · ${esc(ch.name)}${d.time?' · '+fmtT(d.time):''} · ${esc((STATUSES.find(x=>x[0]===s)||STATUSES[0])[1])}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${s}"></span>${d.assigneeId?av(d.assigneeId):''}</div>`; }
+function chip(d,label,removable){ const c=campOf(d), ch=channelById(d.channelId); const s=d.status||'draft';
+  return `<div class="chip" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${esc(c.title)} · ${esc(ch.name)}${d.time?' · '+fmtT(d.time):''} · ${esc((STATUSES.find(x=>x[0]===s)||STATUSES[0])[1])}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${s}"></span>${d.assigneeId?av(d.assigneeId):''}${removable?`<button class="chipx" data-action="quick-delete" data-id="${esc(d.id)}" aria-label="Remove ${esc(ch.name)}" title="Remove">×</button>`:''}</div>`; }
 function evtBtn(c){ return `<button class="evt" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}" title="Event: ${esc(c.title)}">★ <span>${esc(c.title)}</span></button>`; }
 function memberOptions(sel, includeNone=true, noneLabel='Unassigned'){ return (includeNone?`<option value="">${noneLabel}</option>`:'') + teamList().map(m=>`<option value="${esc(m.id)}" ${m.id===sel?'selected':''}>${esc(m.name)}</option>`).join(''); }
 function channelOptions(sel){ return settings().channels.map(c=>`<option value="${esc(c.id)}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join(''); }
@@ -344,7 +369,7 @@ function renderCampaigns(){
 function drow(d, showCamp){
   const ch=channelById(d.channelId), c=campOf(d); const imgs=d.imagePaths||[];
   return `<button class="drow" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch,'lg')}
-    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${d.time?' · '+fmtT(d.time):''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
+    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${d.time?' · '+fmtT(d.time):''}${d.dueDate&&d.status!=='posted'?` · <span style="color:${d.dueDate<todayStr()?'var(--bad)':d.dueDate===todayStr()?'var(--gold)':'inherit'}">due ${esc(fmtD(d.dueDate,{month:'short',day:'numeric'}))}</span>`:''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
     <div class="snip">${d.publishError?`<span style="color:var(--bad)">Posting failed: ${esc(d.publishError)}</span>`:(esc((d.headline?d.headline+' — ':'')+(d.copy||'')) || '<em>No copy yet</em>')}</div>
     <div class="thumbs">${imgs.slice(0,3).map(i=>`<img src="${esc(fileUrl(i))}" alt="">`).join('')}</div>${av(d.assigneeId)}${pill(d.status)}</button>`;
 }
@@ -403,23 +428,88 @@ function renderAdCal(c, ds){
   for(const d of days){ const k=ymd(d); const inR=k>=c.adStart && k<=c.adEnd; const items=(byDate[k]||[]).sort(byWhen); const showMon=d.getDate()===1||k===ymd(days[0]);
     g+=`<div class="aday ${inR?'':'na'} ${ev.has(k)?'ev':''} ${k===t?'today':''}" ${inR?`data-drop="${k}"`:''}>
       <div class="anum"><span>${showMon?`<span class="mon">${d.toLocaleDateString('en-US',{month:'short'})}</span> `:''}${d.getDate()}</span>${ev.has(k)?'<span class="evtag">★ Event</span>':''}${inR?`<button class="adadd" data-action="ad-add" data-id="${esc(id)}" data-date="${k}" aria-label="Add a destination on ${esc(fmtD(k))}">+</button>`:''}</div>
-      ${items.map(x=>chip(x, channelById(x.channelId).name)).join('')}</div>`; }
+      ${items.map(x=>chip(x, channelById(x.channelId).name, true)).join('')}</div>`; }
   g+=`</div>`;
   const outside=ds.filter(d=>!d.date||d.date<c.adStart||d.date>c.adEnd);
-  const tray=outside.length?`<div class="tray"><span class="small muted">Outside the advertising window:</span>${outside.map(x=>chip(x, channelById(x.channelId).name+(x.date?' · '+fmtD(x.date,{month:'short',day:'numeric'}):''))).join('')}</div>`:'';
+  const tray=outside.length?`<div class="tray"><span class="small muted">Outside the advertising window:</span>${outside.map(x=>chip(x, channelById(x.channelId).name+(x.date?' · '+fmtD(x.date,{month:'short',day:'numeric'}):''), true)).join('')}</div>`:'';
   return `<section class="panel">${head}${palette}${g}${tray}</section>`;
 }
 
 /* ---------- my work ---------- */
 function renderWork(){
   const m=me(); let pid=V.workPerson || (m&&m.id) || '';
-  let h=`<div class="pagehead"><h1>My work</h1><div class="row"><label class="small muted" for="w-person">Showing</label><select class="compact" id="w-person" data-ui="workPerson">${memberOptions(pid,false)}<option value="none" ${pid==='none'?'selected':''}>Unassigned</option></select></div></div>`;
-  const mine=Object.values(S.dests).filter(d=>pid==='none'?!d.assigneeId:d.assigneeId===pid).sort(byWhen);
-  const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>d.status!=='posted');
-  const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>!d.publishError&&d.date&&d.date<t)],['Today',open.filter(d=>!d.publishError&&d.date===t)],['Next 7 days',open.filter(d=>!d.publishError&&d.date>t&&d.date<=wk)],['Later',open.filter(d=>!d.publishError&&(!d.date||d.date>wk))],['Posted recently',mine.filter(d=>d.status==='posted').reverse().slice(0,10)]];
+  let h=`<div class="pagehead"><div><h1>My work</h1><div class="sub">Sorted by due date, or publish date when there's no due date.</div></div><div class="row"><label class="small muted" for="w-person">Showing</label><select class="compact" id="w-person" data-ui="workPerson">${memberOptions(pid,false)}<option value="none" ${pid==='none'?'selected':''}>Unassigned</option></select></div></div>`;
+  const when=d=>d.dueDate||d.date||'';
+  const mine=Object.values(S.dests).filter(d=>pid==='none'?!d.assigneeId:d.assigneeId===pid).sort((a,b)=>(when(a)||'9999').localeCompare(when(b)||'9999')||byWhen(a,b));
+  const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>d.status!=='posted'); const ok=d=>!d.publishError;
+  const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>ok(d)&&when(d)&&when(d)<t)],['Due today',open.filter(d=>ok(d)&&when(d)===t)],['Next 7 days',open.filter(d=>ok(d)&&when(d)>t&&when(d)<=wk)],['Later',open.filter(d=>ok(d)&&(!when(d)||when(d)>wk))],['Posted recently',mine.filter(d=>d.status==='posted').reverse().slice(0,10)]];
   if(!mine.length) h+=`<div class="empty"><img src="/assets/mark-color.svg" alt="">Nothing assigned yet.</div>`;
   for(const [g,items] of groups){ if(!items.length) continue; h+=`<div class="sectionlabel">${g} · ${items.length}</div><div class="dlist">${items.map(d=>drow(d,true)).join('')}</div>`; }
   return h;
+}
+
+/* ---------- requests inbox ---------- */
+const REQ_ST = {new:['New','st-new'], approved:['Approved','st-approved'], declined:['Declined','st-declined']};
+function reqWhen(r){ return fmtRange({date:r.start_date||'', endDate:r.end_date||'', time:t5(r.start_time), endTime:t5(r.end_time)}, true); }
+function ago(ts){ const m=Math.round((Date.now()-new Date(ts))/60000); if(m<60) return `${Math.max(1,m)} min ago`; const h=Math.round(m/60); if(h<24) return `${h} hr ago`; const d=Math.round(h/24); return d<14?`${d} day${d===1?'':'s'} ago`:new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function renderRequests(){
+  const all=Object.values(S.requests).sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  const counts={new:0,approved:0,declined:0}; all.forEach(r=>counts[r.status]=(counts[r.status]||0)+1);
+  if(V.requestId && S.requests[V.requestId] && S.requests[V.requestId].status!==V.reqFilter) V.reqFilter=S.requests[V.requestId].status;
+  const list=all.filter(r=>r.status===V.reqFilter);
+  const sel=(V.requestId && S.requests[V.requestId]) || list[0];
+  const formUrl=location.origin+'/request';
+  let h=`<div class="pagehead"><div><h1>Requests</h1><div class="sub">Communication requests from staff and ministry leaders. Share the form: <a href="/request" target="_blank" rel="noopener">${esc(formUrl)}</a></div></div>
+    <div class="row"><button class="btn sm" data-action="copy-form-link">Copy form link</button><div class="seg" role="group" aria-label="Show">${['new','approved','declined'].map(k=>`<button data-action="req-filter" data-f="${k}" class="${V.reqFilter===k?'on':''}">${REQ_ST[k][0]} · ${counts[k]||0}</button>`).join('')}</div></div></div>`;
+  if(!list.length) return h+`<div class="empty"><img src="/assets/mark-color.svg" alt="">${V.reqFilter==='new'?'No new requests. When someone fills out the request form, it shows up here.':'Nothing here yet.'}</div>`;
+  h+=`<div class="inbox"><div class="reqlist">${list.map(r=>`<button class="reqitem ${REQ_ST[r.status][1]} ${sel&&sel.id===r.id?'on':''}" data-action="open-request" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="small">${esc(r.requester_name)}${r.ministry?' · '+esc(r.ministry):''}</span><span class="small muted">${esc(fmtD(r.start_date))} · sent ${esc(ago(r.created_at))}</span></button>`).join('')}</div>`;
+  if(sel && sel.status===V.reqFilter){
+    const chs=(sel.channel_ids||[]).map(channelById); const files=sel.files||[]; const reviewer=memberById(sel.reviewed_by); const camp=sel.campaign_id&&S.campaigns[sel.campaign_id];
+    h+=`<section class="panel stack"><div class="row"><h2 style="font-size:24px;text-transform:uppercase;letter-spacing:.06em;flex:1">${esc(sel.title)}</h2><span class="pill ${REQ_ST[sel.status][1]}">${REQ_ST[sel.status][0]}</span></div>
+      <dl class="dl">
+        <dt>Requested by</dt><dd>${esc(sel.requester_name)} · <a href="mailto:${esc(sel.requester_email)}">${esc(sel.requester_email)}</a>${sel.phone?' · '+esc(sel.phone):''}</dd>
+        ${sel.ministry?`<dt>Ministry</dt><dd>${esc(sel.ministry)}</dd>`:''}
+        <dt>When</dt><dd>${esc(reqWhen(sel))}</dd>
+        ${sel.location?`<dt>Location</dt><dd>${esc(sel.location)}</dd>`:''}
+        <dt>Description</dt><dd>${esc(sel.description)}</dd>
+        <dt>Destinations</dt><dd style="white-space:normal"><div class="chlist">${chs.map(c=>`<span class="chtag">${kb(c)}${esc(c.name)}</span>`).join('')}${sel.not_sure?'<span class="chtag" style="padding-left:10px">Not sure: team decides</span>':''}</div></dd>
+        <dt>Files</dt><dd style="white-space:normal">${files.length?`<div class="files">${files.map(f=>{ const k=fileKind(f), img=k==='image'; return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a><div class="fprev" style="${img?`background-image:url('${esc(fileUrl(f.path))}')`:''}">${img?'':esc(k)}</div><div class="fname">${esc(f.name)}</div></div>`; }).join('')}</div>`:'<span class="muted">None</span>'}</dd>
+        <dt>Received</dt><dd>${esc(new Date(sel.created_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</dd>
+        ${sel.status!=='new'?`<dt>${sel.status==='approved'?'Approved':'Declined'}</dt><dd>${esc(reviewer?reviewer.name:'Staff')}${sel.reviewed_at?' · '+esc(new Date(sel.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})):''}${sel.decision_note?'\n“'+esc(sel.decision_note)+'”':''}</dd>`:''}
+      </dl>
+      <div class="footbar">${sel.status==='new'?`<button class="btn primary" data-action="req-approve" data-id="${esc(sel.id)}">Approve</button><button class="btn" data-action="req-decline" data-id="${esc(sel.id)}">Decline</button>`:''}
+        ${camp?`<a class="btn dark" href="#campaign-${esc(camp.id)}">Open campaign</a>`:''}<span class="spacer"></span><button class="btn ghost sm danger" data-action="req-delete" data-id="${esc(sel.id)}">Delete</button></div>
+    </section>`;
+  } else h+=`<div class="empty">Select a request.</div>`;
+  return h+`</div>`;
+}
+async function approveRequest(m){
+  const r=S.requests[m.id]; if(!r) return; V.busy=true; render(true);
+  let campaignId=null;
+  try{
+    if(m.createCampaign){
+      const start=r.start_date||ymd(addDays(new Date(),21)); let adEnd=r.end_date&&r.end_date>start?r.end_date:start;
+      const c={id:uid(), title:r.title, date:r.start_date||'', endDate:r.end_date||r.start_date||'', time:t5(r.start_time), endTime:t5(r.end_time), adStart:todayStr()<start?todayStr():start, adEnd,
+        location:r.location||'', description:r.description||'', ministry:r.ministry||r.requester_name, link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'',
+        files:(r.files||[]).map(f=>({path:f.path, name:f.name, type:f.type, size:f.size, at:Date.now()}))};
+      saveCampaign(c); campaignId=c.id;
+      let def=parseYmd(start)?addDays(parseYmd(start),-3):new Date(); if(ymd(def)<todayStr()) def=new Date();
+      for(const chId of (r.channel_ids||[])) if(settings().channels.some(x=>x.id===chId)) newDest(c.id, chId, ymd(def), defaultTime(chId), '');
+      for(let i=0;i<60 && Object.keys(dirty).length;i++) await new Promise(res=>setTimeout(res,150));
+    }
+    const res=await api('request-decision',{id:r.id, decision:'approved', note:m.note, campaignId, notify:m.notify});
+    Object.assign(r,{status:'approved', decision_note:m.note, campaign_id:campaignId, reviewed_by:session.user.id, reviewed_at:new Date().toISOString()});
+    V.modal=null; V.busy=false;
+    toast(m.notify?(res.emailed?`Approved. ${r.requester_name} was emailed.`:`Approved, but the email didn't send${res.emailError?': '+res.emailError:''}.`):'Approved.');
+    if(campaignId) location.hash='campaign-'+campaignId; else render(true);
+  }catch(e){ V.busy=false; toast(e.message); render(true); }
+}
+async function declineRequest(m){
+  const r=S.requests[m.id]; if(!r) return; V.busy=true; render(true);
+  try{ const res=await api('request-decision',{id:r.id, decision:'declined', note:m.note, notify:m.notify});
+    Object.assign(r,{status:'declined', decision_note:m.note, reviewed_by:session.user.id, reviewed_at:new Date().toISOString()});
+    V.modal=null; V.busy=false; toast(m.notify?(res.emailed?`Declined. ${r.requester_name} was emailed.`:'Declined, but the email didn\'t send.'):'Declined.'); render(true);
+  }catch(e){ V.busy=false; toast(e.message); render(true); }
 }
 
 /* ---------- settings ---------- */
@@ -449,8 +539,8 @@ function renderSettings(){
     ${CFG&&CFG.aiEnabled?'':'<p class="small" style="margin:0;color:var(--bad)">AI writing is off until ANTHROPIC_API_KEY is added in Netlify.</p>'}
   </section>
   <section class="panel stack"><h2>Destinations</h2>
-    <p class="sub" style="margin:0">The places you publish to. Each becomes a row on the calendar. The type sets the AI writing style and character limits.</p>
-    ${s.channels.map(c=>`<div class="setrow">${kb(c)}<input type="text" id="ch-name-${esc(c.id)}" data-bind="chan:name" data-id="${esc(c.id)}" value="${esc(c.name)}" aria-label="Destination name"><select id="ch-kind-${esc(c.id)}" data-bind="chan:kind" data-id="${esc(c.id)}" aria-label="Destination type">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${c.kind===k?'selected':''}>${v.label}</option>`).join('')}</select><button class="btn ghost iconbtn" data-action="remove-channel" data-id="${esc(c.id)}" aria-label="Remove ${esc(c.name)}">✕</button></div>`).join('')}
+    <p class="sub" style="margin:0">The places you publish to. Each becomes a row on the calendar. Click an icon to change it. The type sets the AI writing style and character limits.</p>
+    ${s.channels.map(c=>`<div class="setrow"><button class="iconbtn-pick" data-action="pick-icon" data-id="${esc(c.id)}" title="Change icon" aria-label="Change icon for ${esc(c.name)}">${kb(c)}</button><input type="text" id="ch-name-${esc(c.id)}" data-bind="chan:name" data-id="${esc(c.id)}" value="${esc(c.name)}" aria-label="Destination name"><select id="ch-kind-${esc(c.id)}" data-bind="chan:kind" data-id="${esc(c.id)}" aria-label="Destination type">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${c.kind===k?'selected':''}>${v.label}</option>`).join('')}</select><button class="btn ghost iconbtn" data-action="remove-channel" data-id="${esc(c.id)}" aria-label="Remove ${esc(c.name)}">✕</button></div>`).join('')}
     <div><button class="btn sm" data-action="add-channel">+ Add destination</button></div>
   </section>
   <section class="panel stack"><h2>Team</h2>
@@ -477,8 +567,14 @@ function renderDrawer(){
     <div class="grid2">
       <div class="field"><label class="lbl" for="d-date-${id}">Publish date</label><input type="date" id="d-date-${id}" data-bind="dest:date" data-id="${id}" value="${esc(d.date)}"></div>
       <div class="field"><label class="lbl" for="d-time-${id}">Time</label><input type="time" id="d-time-${id}" data-bind="dest:time" data-id="${id}" value="${esc(d.time)}"></div>
-      <div class="field"><label class="lbl" for="d-assignee-${id}">Assigned to</label><select id="d-assignee-${id}" data-bind="dest:assigneeId" data-id="${id}">${memberOptions(d.assigneeId)}</select></div>
       <div class="field"><label class="lbl" for="d-chan-${id}">Destination</label><select id="d-chan-${id}" data-bind="dest:channelId" data-id="${id}">${channelOptions(d.channelId)}</select></div>
+    </div>
+    <div class="postbox" style="border-left-color:var(--gold);gap:10px"><span class="lbl" style="margin:0">Assignment</span>
+      <div class="grid2">
+        <div class="field"><label class="lbl" for="d-assignee-${id}">Assigned to</label><select id="d-assignee-${id}" data-bind="dest:assigneeId" data-id="${id}">${memberOptions(d.assigneeId)}</select></div>
+        <div class="field"><label class="lbl" for="d-due-${id}">Due date</label><input type="date" id="d-due-${id}" data-bind="dest:dueDate" data-id="${id}" value="${esc(d.dueDate)}" ${d.date?`max="${esc(d.date)}"`:''}></div>
+      </div>
+      <span class="small muted">${d.assigneeId?`${esc((memberById(d.assigneeId)||{}).name||'They')} gets an email when assigned and a reminder the morning it's due.`:'Pick someone to email them the assignment. They get a reminder the morning it\'s due.'}</span>
     </div>
     <div class="field"><span class="lbl">Status</span><div class="statusseg" role="group" aria-label="Status">${STATUSES.map(([v,l])=>`<button class="st-${v} ${st===v?'on':''}" data-action="set-status" data-id="${id}" data-status="${v}" aria-pressed="${st===v}"><span class="sdot"></span>${l}</button>`).join('')}</div></div>
     ${k.head?`<div class="field"><label class="lbl" for="d-head-${id}">${k.head}</label><input type="text" id="d-head-${id}" data-bind="dest:headline" data-id="${id}" value="${esc(d.headline)}"></div>`:''}
@@ -556,6 +652,18 @@ function renderModal(){
       <div class="stack" style="gap:8px">${list.map(c=>`<button class="pickrow" data-action="pick-campaign" data-id="${esc(c.id)}"><span class="sw" style="--c:${esc(c.color)};cursor:inherit"></span><span style="flex:1"><strong>${esc(c.title)}</strong><br><span class="small muted">${esc(fmtRange(c))}</span></span></button>`).join('')||'<div class="muted">No campaigns yet.</div>'}</div>
       <div class="row"><button class="btn" data-action="new-campaign">+ New campaign instead</button><span class="spacer"></span><button class="btn" data-action="modal-close">Cancel</button></div>`);
   }
+  if(m.type==='icon-picker'){ const ch=channelById(m.channelId); const k=kindOf(ch); const cur=iconOf(ch);
+    return wrap(`<h2 id="m-t">Icon for ${esc(ch.name)}</h2>
+      <div class="row" style="gap:14px"><div class="iconprev" style="--k:${k.color}"><img src="${esc(iconUrl(cur))}" alt=""></div><div class="small muted">Current: <code>${esc(cur)}</code><br>Search thousands of free icons from Lucide, plus brand logos from Simple Icons.</div></div>
+      <div class="field"><label class="lbl" for="icon-q">Search icons</label><input type="text" id="icon-q" placeholder="Try: youtube, calendar, music, kids, coffee" autocomplete="off"></div>
+      <div class="icongrid" id="icon-results">${iconCells(SUGGESTED_ICONS, cur)}</div>
+      <div class="row"><button class="btn sm" data-action="icon-reset">Use default icon</button><span class="spacer"></span><button class="btn" data-action="modal-close">Done</button></div>`, 680); }
+  if(m.type==='req-approve'||m.type==='req-decline'){ const r=S.requests[m.id]; const ap=m.type==='req-approve';
+    return wrap(`<h2 id="m-t">${ap?'Approve':'Decline'} request</h2><p class="prose" style="margin:0">${esc(r.title)} · from ${esc(r.requester_name)}</p>
+      ${ap?`<label class="check"><input type="checkbox" id="ra-camp" ${m.createCampaign?'checked':''}><span>Create a campaign with the requested destinations<br><span class="small muted">Event details and files are copied in. You can change anything after.</span></span></label>`:''}
+      <label class="check"><input type="checkbox" id="ra-notify" ${m.notify?'checked':''}><span>Email ${esc(r.requester_name)} (${esc(r.requester_email)})</span></label>
+      <div class="field"><label class="lbl" for="ra-note">Message to include <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="ra-note" rows="4" placeholder="${ap?'e.g. We\'ll have this in the Weekly Update on the 12th and on social media the week of the event.':'e.g. This falls outside our communication guidelines. Let\'s talk about other options.'}">${esc(m.note||'')}</textarea></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn ${ap?'primary':'dark'}" data-action="${ap?'req-approve-go':'req-decline-go'}" ${V.busy?'disabled':''}>${V.busy?'Working…':ap?'Approve':'Decline'}</button></div>`, 600); }
   if(m.type==='pick-channel') return wrap(`<h2 id="m-t">Add a destination on ${esc(fmtD(m.date,{weekday:'long',month:'long',day:'numeric'}))}</h2>
       <div class="stack" style="gap:8px">${settings().channels.map(ch=>`<button class="pickrow" data-action="pick-channel" data-id="${esc(ch.id)}">${kb(ch)}<strong>${esc(ch.name)}</strong></button>`).join('')}</div>
       <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button></div>`);
@@ -570,6 +678,17 @@ function renderModal(){
   }
   return '';
 }
+function iconCells(list, cur){ return list.map(ic=>`<button class="iconcell ${ic===cur?'on':''}" data-action="set-icon" data-icon="${esc(ic)}" title="${esc(ic)}"><img src="${esc(iconUrl(ic,'#414A55'))}" alt="" loading="lazy"><span>${esc(ic.split(':')[1])}</span></button>`).join(''); }
+let iconSearchT, iconSearchN=0;
+function iconSearch(q){
+  clearTimeout(iconSearchT);
+  iconSearchT=setTimeout(async ()=>{ const box=document.getElementById('icon-results'); if(!box) return; const n=++iconSearchN; const cur=iconOf(channelById(V.modal.channelId));
+    if(!q.trim()){ box.innerHTML=iconCells(SUGGESTED_ICONS,cur); return; }
+    box.innerHTML='<span class="small muted">Searching…</span>';
+    try{ const r=await fetch(`https://api.iconify.design/search?query=${encodeURIComponent(q.trim())}&prefixes=${ICON_SETS}&limit=96`).then(r=>r.json()); if(n!==iconSearchN) return;
+      box.innerHTML = (r.icons&&r.icons.length) ? iconCells(r.icons,cur) : '<span class="small muted">No icons found. Try a simpler word.</span>'; }
+    catch(e){ box.innerHTML='<span class="small muted">Icon search is unavailable right now.</span>'; } }, 300);
+}
 function defaultTime(chanId){ const k=channelById(chanId).kind; return k==='slides'||k==='announcement'||k==='bulletin' ? '08:30' : k==='text' ? '12:00' : '09:00'; }
 function openAddDests(cid){
   const c=S.campaigns[cid]; const base=c&&parseYmd(c.date);
@@ -581,8 +700,9 @@ function openAddDests(cid){
 
 /* ---------- actions ---------- */
 function newDest(campaignId, channelId, date, time, assigneeId){
-  const d={id:uid(), campaignId, channelId, date:date||'', time:time||'', assigneeId:assigneeId||'', status:'draft', headline:'', copy:'', notes:'', imagePaths:[], autoPublish:false, publishedAt:'', externalUrl:'', publishError:''};
-  saveDest(d); return d;
+  const d={id:uid(), campaignId, channelId, date:date||'', time:time||'', assigneeId:assigneeId||'', status:'draft', headline:'', copy:'', notes:'', imagePaths:[], autoPublish:false, publishedAt:'', externalUrl:'', publishError:'', dueDate:''};
+  if(d.assigneeId) d.dueDate=defaultDue(d);
+  saveDest(d); if(d.assigneeId) notifyAssigned(d.id); return d;
 }
 function newCampaign(){
   const start=ymd(addDays(new Date(),21));
@@ -595,6 +715,22 @@ function pathInUse(path){ return Object.values(S.dests).some(d=>(d.imagePaths||[
 async function deleteFileIfUnused(path){ if(path && !pathInUse(path)) await sb.storage.from('files').remove([path]).catch(()=>{}); }
 
 const A = {
+  'pick-icon'(el){ V.modal={type:'icon-picker', channelId:el.dataset.id}; render(true); setTimeout(()=>{ const q=document.getElementById('icon-q'); if(q) q.focus(); },30); },
+  'set-icon'(el){ const ch=settings().channels.find(c=>c.id===V.modal.channelId); if(!ch) return; ch.icon=el.dataset.icon; saveSettings(); V.modal=null; render(true); toast(`Icon updated for ${ch.name}`); },
+  'icon-reset'(){ const ch=settings().channels.find(c=>c.id===V.modal.channelId); if(!ch) return; delete ch.icon; saveSettings(); V.modal=null; render(true); },
+  'quick-delete'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const copy=clone(d); const name=channelById(d.channelId).name;
+    if(V.openDest===d.id) V.openDest=null; removeDest(d.id); render(true);
+    toast(`Removed ${name}`, ()=>{ S.dests[copy.id]=copy; writeKey('d:'+copy.id); render(true); toast(`${name} restored`); }); },
+  'toast-undo'(){ const fn=toastUndo; toastUndo=null; document.getElementById('toast').innerHTML=''; if(fn) fn(); },
+  'req-filter'(el){ V.reqFilter=el.dataset.f; V.requestId=null; if(location.hash!=='#requests') history.replaceState(null,'','#requests'); render(true); },
+  'open-request'(el){ V.requestId=el.dataset.id; history.replaceState(null,'','#request-'+el.dataset.id); render(true); },
+  'copy-form-link'(){ copyText(location.origin+'/request'); },
+  'req-approve'(el){ V.modal={type:'req-approve', id:el.dataset.id, createCampaign:true, notify:true, note:''}; render(true); },
+  'req-decline'(el){ V.modal={type:'req-decline', id:el.dataset.id, notify:true, note:''}; render(true); },
+  'req-approve-go'(){ const m=V.modal; m.note=(document.getElementById('ra-note')||{}).value||''; m.createCampaign=!!(document.getElementById('ra-camp')||{}).checked; m.notify=!!(document.getElementById('ra-notify')||{}).checked; approveRequest(m); },
+  'req-decline-go'(){ const m=V.modal; m.note=(document.getElementById('ra-note')||{}).value||''; m.notify=!!(document.getElementById('ra-notify')||{}).checked; declineRequest(m); },
+  'req-delete'(el){ const r=S.requests[el.dataset.id]; confirmBox('Delete this request?', `"${r.title}" from ${r.requester_name} will be removed. Its files stay in storage if a campaign uses them.`, async ()=>{
+      const { error } = await sb.from('requests').delete().eq('id',r.id); if(error){ toast(error.message); return; } delete S.requests[r.id]; V.requestId=null; render(true); }); },
   'auth-mode'(el){ V.authMode=el.dataset.mode; V.authErr=''; V.authMsg=''; render(true); },
   'sign-out'(){ flushAll(); sb.auth.signOut(); },
   'change-pw'(){ V.modal={type:'change-pw'}; render(true); },
@@ -687,7 +823,10 @@ document.addEventListener('submit', async e=>{
 /* ---------- field binding ---------- */
 function onField(el, committed){
   const [kind, field]=el.dataset.bind.split(':'); const id=el.dataset.id; const val = el.type==='checkbox' ? el.checked : el.value;
-  if(kind==='dest'){ const d=S.dests[id]; if(!d) return; d[field]=val; saveDest(d, committed?0:700);
+  if(kind==='dest'){ const d=S.dests[id]; if(!d) return; const before=d[field]; d[field]=val;
+    if(field==='assigneeId' && val && val!==before && !d.dueDate) d.dueDate=defaultDue(d);
+    saveDest(d, committed?0:700);
+    if(field==='assigneeId' && val && val!==before) notifyAssigned(d.id);
     if(field==='copy'){ const k=kindOf(channelById(d.channelId)); const cnt=document.getElementById('cnt-'+id); if(cnt){ cnt.textContent=`${val.length}${k.limit?' / '+k.limit:''} characters`; cnt.classList.toggle('over', !!(k.limit&&val.length>k.limit)); } }
     if(committed && !['copy','notes','headline'].includes(field)) render(true); }
   else if(kind==='camp'){ const c=S.campaigns[id]; if(!c) return; const prev=c[field]; c[field]=val;
@@ -701,7 +840,8 @@ function onField(el, committed){
 document.addEventListener('input', e=>{
   const el=e.target;
   if(el.dataset.bind){ const t=el.type; const committed = el.tagName==='SELECT'||t==='date'||t==='time'||t==='checkbox'; if(!committed) onField(el,false); return; }
-  if(el.dataset.ai){ aiState(el.dataset.id)[el.dataset.ai]=el.value; }
+  if(el.dataset.ai){ aiState(el.dataset.id)[el.dataset.ai]=el.value; return; }
+  if(el.id==='icon-q') iconSearch(el.value);
 });
 document.addEventListener('change', async e=>{
   const el=e.target;
@@ -811,7 +951,8 @@ document.addEventListener('drop', e=>{
 });
 
 /* ---------- toast ---------- */
-let toastT;
-function toast(msg){ const t=document.getElementById('toast'); t.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toastT); toastT=setTimeout(()=>{ t.innerHTML=''; },3600); }
+let toastT, toastUndo=null;
+function toast(msg, undo){ const t=document.getElementById('toast'); toastUndo=undo||null;
+  t.innerHTML=`<div class="toast" role="status">${esc(msg)}${undo?'<button class="undo" data-action="toast-undo">Undo</button>':''}</div>`; clearTimeout(toastT); toastT=setTimeout(()=>{ t.innerHTML=''; toastUndo=null; }, undo?7000:3600); }
 
 boot();

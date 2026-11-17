@@ -9,10 +9,13 @@ It runs on three services:
 | **Supabase** (supabase.com) | Logins, database, file storage | Free plan is plenty to start |
 | **Netlify** (netlify.com) | Hosts the website and the small server functions (AI, posting, invites) | Free plan |
 | **Anthropic API** (console.anthropic.com) | The "Write with AI" button | Pay per use, usually a few cents a day |
+| **Resend** (resend.com) | Sends assignment, due-date, request and approval emails (and logins/invites through Supabase) | Free up to 3,000 emails a month |
 
 Plan on about an hour for setup. Facebook/Instagram (step 6) can wait until later.
 
 ---
+
+> **Already set up the first version?** Run `supabase/schema.sql` again in the SQL Editor; it's safe to re-run and adds the new due-date and request tables. Then add the email variables in step 3 and redeploy.
 
 ## 1. Create the Supabase project
 
@@ -24,11 +27,16 @@ Plan on about an hour for setup. Facebook/Instagram (step 6) can wait until late
 4. Go to **Authentication → URL Configuration**:
    - **Site URL:** `https://comms.fbss.church` (use your Netlify address until the subdomain is live, then come back and change it).
    - **Redirect URLs:** add `https://comms.fbss.church/**` and your Netlify address, like `https://fbss-comms.netlify.app/**`.
-5. **Set up email sending (important).** Supabase's built-in email only reaches people on your Supabase team and sends very few messages per hour, so invites and password resets won't reach staff without this. Go to **Authentication → Emails → SMTP Settings** and enter an email provider's details. Any of these work:
-   - Google Workspace: smtp.gmail.com, port 587, a staff Gmail address plus an App Password.
-   - Resend (resend.com) or SendGrid, both with free tiers.
-
-   Use a sender like `comms@fbss.church`.
+5. **Set up email sending (important).** Supabase's built-in email only reaches people on your Supabase team and sends very few messages per hour, so invites and password resets won't reach staff without this. Use Resend for both Supabase and the app's own emails:
+   1. Sign up at **resend.com** and go to **Domains → Add domain**. Enter `fbss.church` and add the DNS records it shows, at the same place you'll add the `comms` record in step 4. Wait until it says **Verified**.
+   2. In Resend, go to **API Keys → Create API key** with **Sending access** and copy it. You'll use this key twice: here, and in Netlify (step 3).
+   3. In Supabase, go to **Authentication → Emails → SMTP Settings** and turn on custom SMTP:
+      - Host: `smtp.resend.com`
+      - Port: `465`
+      - Username: `resend`
+      - Password: your Resend API key
+      - Sender email: `comms@fbss.church`
+      - Sender name: `FBSS Communications`
 6. Optional: under **Authentication → Emails → Templates**, edit the **Invite user** email so it sounds like FBSS.
 7. **Create your own admin login:**
    - **Authentication → Users → Add user → Create new user.** Enter your email and a password, and check **Auto Confirm User**.
@@ -62,6 +70,9 @@ Plan on about an hour for setup. Facebook/Instagram (step 6) can wait until late
    | `SUPABASE_PUBLISHABLE_KEY` | publishable key (`sb_publishable_…`) |
    | `SUPABASE_SECRET_KEY` | secret key (`sb_secret_…`) |
    | `ANTHROPIC_API_KEY` | from step 5 (you can add it later) |
+   | `RESEND_API_KEY` | your Resend API key from step 1.5 |
+   | `EMAIL_FROM` | `FBSS Communications <comms@fbss.church>` (must use your verified domain) |
+   | `REQUEST_NOTIFY_EMAILS` | optional: who hears about new requests, comma separated. If blank, all admins are emailed. |
    | `CHURCH_TIMEZONE` | `America/Chicago` (optional; this is the default) |
 
 4. Go to **Deploys → Trigger deploy → Deploy site** so the new variables take effect.
@@ -109,7 +120,33 @@ Meta may ask you to complete **Business Verification** or **App Review** for the
 - If something fails, the reason shows on the destination and under **My work → Needs attention**. Fix the problem and click **Try again**.
 - Instagram needs at least one photo. Photos added in the app are converted to JPEG automatically, as Instagram requires. Multiple photos become a carousel (up to 10).
 
-## 7. Invite your team
+## 7. Assignments and email reminders
+
+Each destination has an **Assignment** box with **Assigned to** and **Due date**.
+- When you assign someone, they get an email right away with a link to the item. Assigning yourself doesn't send one.
+- If no due date is set, it defaults to 2 days before the publish date. You can change it.
+- At **7 AM Central** (8 AM during daylight saving time) on the due date, each person gets one email listing everything due that day that hasn't been posted.
+- **My work** is sorted by due date and shows overdue items in red.
+
+## 8. Communication request form
+
+Staff and ministry leaders request communications at **https://comms.fbss.church/request**. No login is needed. Share that link in your staff email, or put it on the church website.
+
+- The form collects:
+  - their name and email
+  - the event name, start and end dates, start and end times, and location
+  - a communication description
+  - which destinations they want (or "Not sure")
+  - any files: posters, photos, PDFs, up to 15 files of 50 MB each
+- New requests appear under the **Requests** tab with a count badge, and admins get an email (or the addresses in `REQUEST_NOTIFY_EMAILS`).
+- **Approve** creates a campaign with the event details, files and requested destinations already filled in. It then emails the requester, with your message if you add one. **Decline** also emails them, if you leave that checked.
+- The form has a hidden spam trap. If spam ever becomes a problem, a CAPTCHA can be added.
+
+## 9. Destination icons
+
+In **Settings → Destinations**, click any destination's icon to choose a new one. You can search thousands of free icons from **Lucide**, plus brand logos (YouTube, TikTok, Spotify and more) from **Simple Icons**. Icons load from the free Iconify service (api.iconify.design). If it's ever unreachable, the two-letter labels show instead.
+
+## 10. Invite your team
 
 Go to **Settings → Team**, enter a name and email, and click **Send invite**. They get an email, click the link, choose a password, and they're in.
 
@@ -126,20 +163,26 @@ Go to **Settings → Team**, enter a name and email, and click **Send invite**. 
 - **Invites or reset emails never arrive**: set up SMTP (step 1.5) and check spam folders.
 - **The invite link says "expired"**: links last 24 hours. Send a new invite.
 - **AI says it isn't set up**: add `ANTHROPIC_API_KEY` in Netlify and redeploy.
+- **Assignment or request emails don't arrive**: check that `RESEND_API_KEY` and `EMAIL_FROM` are set in Netlify, that `EMAIL_FROM` uses your verified domain, and look in Resend → **Logs**.
+- **Request form says it's unavailable**: the Netlify environment variables are missing, or `schema.sql` hasn't been re-run since this update.
 - **"Facebook said: …" when connecting**: the token is missing a permission or isn't assigned to the Page. Regenerate it (step 6.4).
 
 ## Security notes
 
 - Signups are off, so only invited staff can sign in.
 - The Supabase secret key and the Facebook token stay on the server and are never sent to browsers.
+- The public request form can only upload into its own new folder through one-time upload links, and can't read or change anything else.
 - Uploaded files sit in a storage bucket with **public links**, because Instagram needs to fetch photos from a public address. Each link is long and unguessable, but anyone who has one can open the file. Don't upload private documents.
 
 ## What's in this folder
 
 ```
-public/                 the website (index.html, app.js, styles.css, logo files)
-netlify/functions/      server functions: config, ai-copy, team, social, publish-now, publish-scheduled (runs every 5 min)
-netlify/lib/            shared helpers and Facebook/Instagram posting code
+public/                 the staff app (index.html, app.js, styles.css, logo files)
+public/request/         the public request form (with public/request.js)
+netlify/functions/      server functions: config, ai-copy, team, social, publish-now,
+                        publish-scheduled (every 5 min), notify-assigned, due-reminders (daily),
+                        request-form, request-upload, request-submit, request-decision
+netlify/lib/            shared helpers, email templates, and Facebook/Instagram posting code
 supabase/schema.sql     database tables, security rules, storage bucket
 netlify.toml            Netlify settings
 ```

@@ -28,6 +28,11 @@ export async function db(path, { method = 'GET', body, prefer } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+// Raw fetch with the server key, for Supabase endpoints that aren't the database (e.g. storage).
+export async function serviceFetch(url, opts = {}) {
+  return fetch(url, { ...opts, headers: { ...serviceHeaders(), 'content-type': 'application/json', ...(opts.headers || {}) } });
+}
+
 export async function authAdmin(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${SUPABASE_URL()}/auth/v1/${path}`, {
     method,

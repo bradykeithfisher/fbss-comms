@@ -162,3 +162,46 @@ do $$ begin
   begin alter publication supabase_realtime add table public.app_settings; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.profiles; exception when duplicate_object then null; end;
 end $$;
+
+-- =====================================================================
+-- Update 2: assignment due dates + email tracking, communication requests
+-- (safe to run again; running this whole file again is fine)
+-- =====================================================================
+alter table public.destinations add column if not exists due_date date;
+alter table public.destinations add column if not exists assigned_notified uuid;     -- last person emailed about this assignment
+alter table public.destinations add column if not exists due_reminded_on date;       -- day the due-date reminder went out
+create index if not exists destinations_due_idx on public.destinations(due_date) where assignee_id is not null;
+
+create table if not exists public.requests (
+  id uuid primary key default gen_random_uuid(),
+  status text not null default 'new' check (status in ('new','approved','declined')),
+  requester_name text not null,
+  requester_email text not null,
+  ministry text not null default '',
+  phone text not null default '',
+  title text not null,
+  start_date date, end_date date,
+  start_time time, end_time time,
+  location text not null default '',
+  description text not null default '',
+  channel_ids jsonb not null default '[]'::jsonb,
+  not_sure boolean not null default false,
+  files jsonb not null default '[]'::jsonb,
+  decision_note text not null default '',
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  campaign_id uuid references public.campaigns(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.requests enable row level security;
+-- The public form submits through a server function, so only signed-in staff touch this table directly.
+drop policy if exists "staff read requests" on public.requests;
+create policy "staff read requests" on public.requests for select to authenticated using (true);
+drop policy if exists "staff update requests" on public.requests;
+create policy "staff update requests" on public.requests for update to authenticated using (true) with check (true);
+drop policy if exists "staff delete requests" on public.requests;
+create policy "staff delete requests" on public.requests for delete to authenticated using (true);
+
+do $$ begin
+  begin alter publication supabase_realtime add table public.requests; exception when duplicate_object then null; end;
+end $$;
