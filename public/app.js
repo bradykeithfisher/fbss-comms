@@ -936,47 +936,55 @@ const A = {
   'pick-channel'(el){ const m=V.modal; if(m.then==='campaign'){ V.modal={type:'pick-campaign', channelId:el.dataset.id, date:m.date}; render(true); return; } const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
   'add-dests'(el){ openAddDests(el.dataset.id); },
   'modal-close'(){ V.modal=null; render(true); },
-  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, style:o.style||'auto', notes:o.notes||''}; render(true); },
+  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'auto', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
   async 'gfx-go'(){ const m=V.modal; if(!m||V.busy) return; const c=S.campaigns[m.id];
-    const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim();
-    Object.assign(m, gfxReadPick(), { style, notes });
-    if(!m.pick.poster&&!m.pick.title&&!m.pick.background&&!m.social){ toast('Choose at least one graphic'); return; }
-    const plan={...m.pick, social:m.social}, batch=uid();
+    const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim(), title=document.getElementById('gf-name').value.trim();
+    Object.assign(m, gfxReadPick(), { style, notes, title });
+    if(!title){ toast('Add the title for the graphics'); return; }
+    const text={title};
+    if(!m.pick.poster&&!m.pick.title&&!m.pick.background&&!m.social&&!m.socialD){ toast('Choose at least one graphic'); return; }
+    const plan={...m.pick, social:m.social, socialD:m.socialD}, batch=uid();
     flushAll(); V.busy=true; render(true);
-    try{ const dirs=await gfxDirections(c, 2, [], style, notes);
-      await gfxStart(c.id, dirs.map((d,i)=>({kind:'concept', options:{style, notes, plan, batch, variation:i+1, direction:d.name, brief:d.brief}}))); V.modal=null; toast('Painting two concepts. You can keep working; this takes a minute or two.'); }
+    try{ const dirs=await gfxDirections(c, 2, [], style, notes, title);
+      await gfxStart(c.id, dirs.map((d,i)=>({kind:'concept', options:{style, notes, text, plan, batch, variation:i+1, direction:d.name, brief:d.brief}}))); V.modal=null; toast('Designing two concepts. You can keep working; this takes a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
   'gfx-review'(el){ V.modal={type:'gfx-review', id:el.dataset.id}; render(true); gfxSchedule(); },
   async 'gfx-another'(el){ const cid=el.dataset.id; const r=gfxRound(cid); if(!r||V.busy) return; const o=r.list[0].options;
     V.busy=true; render(true);
     try{ const prior=r.list.filter(j=>j.options.brief).map(j=>({name:j.options.direction, brief:j.options.brief}));
-      const [d]=await gfxDirections(S.campaigns[cid], 1, prior, o.style, o.notes);
-      await gfxStart(cid,[{kind:'concept', options:{style:o.style, notes:o.notes, plan:o.plan, batch:o.batch, variation:Math.max(...r.list.map(j=>j.options.variation||1))+1, direction:d.name, brief:d.brief}}]); }
+      const [d]=await gfxDirections(S.campaigns[cid], 1, prior, o.style, o.notes, o.text&&o.text.title);
+      await gfxStart(cid,[{kind:'concept', options:{style:o.style, notes:o.notes, text:o.text, plan:o.plan, batch:o.batch, variation:Math.max(...r.list.map(j=>j.options.variation||1))+1, direction:d.name, brief:d.brief}}]); }
     catch(e){ toast(e.message); }
     V.busy=false; render(true); },
-  'gfx-choose'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return; const p=j.options.plan||{};
-    V.modal={type:'gfx-approve', id:j.id, pick:{poster:p.poster!==false, title:p.title!==false, background:p.background!==false}, social:p.social===undefined?1:p.social}; render(true); },
+  'gfx-choose'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return; const p=j.options.plan||{}; const c=S.campaigns[j.campaign_id];
+    V.modal={type:'gfx-approve', id:j.id, pick:{poster:p.poster!==false, title:p.title!==false, background:p.background!==false}, social:p.social===undefined?1:p.social, socialD:p.socialD||0,
+      text:{ title:(j.options.text&&j.options.text.title)||c.title, when:gfxWhenText(c), where:c.location||'', extra:c.link?String(c.link).replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,''):'' }}; render(true); },
   async 'gfx-approve-go'(){ const m=V.modal; if(!m||V.busy) return; const j=S.gjobs[m.id]; if(!j) return;
-    Object.assign(m, gfxReadPick()); const {pick,social}=m;
-    if(!pick.poster&&!pick.title&&!pick.background&&!social){ toast('Choose at least one graphic'); return; }
+    Object.assign(m, gfxReadPick()); const {pick,social,socialD}=m;
+    const v=id=>document.getElementById(id).value.trim(); m.text={...m.text, when:v('gf-when'), where:v('gf-where'), extra:v('gf-extra')};
+    if(!pick.poster&&!pick.title&&!pick.background&&!social&&!socialD){ toast('Choose at least one graphic'); return; }
     V.busy=true; render(true);
     try{
       const round=gfxRound(j.campaign_id);
-      await sb.from('graphics_jobs').update({ status:'chosen', updated_at:new Date().toISOString() }).eq('id',j.id); S.gjobs[j.id]={...j,status:'chosen'};
+      const chosenOpts={...j.options, text:m.text};
+      await sb.from('graphics_jobs').update({ status:'chosen', options:chosenOpts, updated_at:new Date().toISOString() }).eq('id',j.id); S.gjobs[j.id]={...j,status:'chosen',options:chosenOpts};
       for(const o of (round?round.list:[])) if(o.id!==j.id && o.status!=='chosen'){ await sb.from('graphics_jobs').update({ status:'passed', updated_at:new Date().toISOString() }).eq('id',o.id); S.gjobs[o.id]={...o,status:'passed'}; }
-      const base={style:j.options.style, notes:j.options.notes, brief:j.options.brief, direction:j.options.direction, ref:j.art_path, concept:j.id}, list=[];
-      if(pick.title||pick.background) list.push({kind:'wide', options:{...base, title:pick.title, background:pick.background}, artPath:j.art_path});
+      const base={style:j.options.style, notes:j.options.notes, text:m.text, brief:j.options.brief, direction:j.options.direction, ref:j.art_path, concept:j.id}, list=[];
+      if(pick.title) list.push({kind:'title', options:{...base}, artPath:j.art_path});
+      if(pick.background) list.push({kind:'background', options:{...base}});
       if(pick.poster) list.push({kind:'poster', options:{...base}});
       for(let i=1;i<=social;i++) list.push({kind:'social', options:{...base, variation:i}});
+      for(let i=1;i<=socialD;i++) list.push({kind:'social', options:{...base, details:true, variation:social+i}});
       V.modal=null; await gfxStart(j.campaign_id, list);
       toast('Making your graphics. They\'ll be saved to Campaign files as they finish.');
     }catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
   'gfx-cancel'(el){ const cid=el.dataset.id; const r=gfxRound(cid); if(!r) return;
     confirmBox('Start over?', 'This clears these concepts so you can design graphics again.', async ()=>{ for(const j of r.list){ delete S.gjobs[j.id]; await sb.from('graphics_jobs').update({ status:'passed', updated_at:new Date().toISOString() }).eq('id',j.id); } render(true); }, 'Start over'); },
-  async 'gfx-more'(el){ const cid=el.dataset.id; const ch=gfxChosen(cid); if(!ch) return; const n=gfxJobs(cid).filter(j=>j.kind==='social').length+1;
-    try{ await gfxStart(cid,[{kind:'social',options:{style:ch.options.style,notes:ch.options.notes,brief:ch.options.brief,direction:ch.options.direction,ref:ch.art_path,concept:ch.id,variation:n}}]); toast('Making another social post…'); }catch(e){ toast(e.message); } },
+  async 'gfx-more'(el){ const cid=el.dataset.id; const ch=gfxChosen(cid); if(!ch) return; const n=gfxJobs(cid).filter(j=>j.kind==='social').length+1; const details=!!el.dataset.details;
+    const t=ch.options.text||{}; if(details && !t.when && !t.where && !t.extra){ toast('Add the event details first: choose the concept again with Design graphics, or edit the campaign.'); return; }
+    try{ await gfxStart(cid,[{kind:'social',options:{style:ch.options.style,notes:ch.options.notes,text:t,brief:ch.options.brief,direction:ch.options.direction,ref:ch.art_path,concept:ch.id,variation:n,details}}]); toast('Making another social post…'); }catch(e){ toast(e.message); } },
   async 'gfx-retry'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return;
     await sb.from('graphics_jobs').delete().eq('id',j.id); delete S.gjobs[j.id];
     try{ await gfxStart(j.campaign_id,[{kind:j.kind,options:j.options}]); }catch(e){ toast(e.message); render(true); } },
@@ -1134,14 +1142,14 @@ async function handleUpload(el){
 
 
 /* ---------- AI graphics ----------
-   1) "Design graphics" asks for two design concepts (16:9 artwork). 2) Staff review them, ask for another,
-   and choose one. 3) The chosen concept becomes the title/background art, and OpenAI recreates it for the
-   poster and social posts. Text, fonts and logo are added here (graphics.js) and the files saved to the campaign.
+   1) "Design graphics" asks for two design concepts: finished 16:9 designs with the title designed in.
+   2) Staff review them, ask for another, and choose one. 3) The chosen concept is the title graphic; OpenAI
+   adapts it into the background (words removed), poster and social posts. graphics.js saves the files.
    One row per image in graphics_jobs; the Supabase Edge Function "graphics" makes the artwork. */
 const GFX_STYLES=[['auto','Let the AI choose'],['photo','Photographic'],['illustrated','Illustrated'],['watercolor','Watercolor'],['textured','Textured, no people']];
 const gfxLabel=j=> j.kind==='concept' ? `Concept ${(j.options&&j.options.variation)||1}${j.options&&j.options.direction?' · '+j.options.direction:''}` : j.kind==='poster' ? 'Poster · 36 × 42 in (PDF)'
-  : j.kind==='wide' ? [j.options&&j.options.title!==false&&'Title',j.options&&j.options.background&&'Background'].filter(Boolean).join(' + ')+' · 16 × 9'
-  : `Social post${(j.options&&j.options.variation>1)?' '+j.options.variation:''} · 4 × 5`;
+  : (j.kind==='title'||j.kind==='wide') ? 'Title graphic · 16 × 9' : j.kind==='background' ? 'Background · 16 × 9'
+  : `Social post${(j.options&&j.options.variation>1)?' '+j.options.variation:''}${j.options&&j.options.details?' · with details':''} · 4 × 5`;
 const gfxJobs=cid=>Object.values(S.gjobs).filter(j=>j.campaign_id===cid).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
 const gfxAge=j=>Date.now()-Date.parse(j.updated_at||j.created_at||0);
 const gfxStuck=j=>((j.status==='queued'||j.status==='working')&&gfxAge(j)>6*60e3) || (j.status==='composing'&&gfxAge(j)>3*60e3);
@@ -1155,18 +1163,19 @@ function gfxRound(cid){
 }
 const gfxChosen=cid=>gfxJobs(cid).filter(j=>j.kind==='concept'&&j.status==='chosen').slice(-1)[0]||null;
 const gfxLoaded={}, gfxPrev={}; let gfxTimer=null, gfxComposing=false;
-// A preview of a concept as a finished title graphic (made in the browser, not saved).
-function gfxPreview(j){
-  if(gfxPrev[j.id]) return gfxPrev[j.id]==='…'?'':gfxPrev[j.id];
-  if(j.status!=='art'||!j.art_path) return '';
-  gfxPrev[j.id]='…'; const c=S.campaigns[j.campaign_id];
-  GFX.makeTitle(c, fileUrl(j.art_path)).then(b=>{ gfxPrev[j.id]=URL.createObjectURL(b); render(); }).catch(()=>{ gfxPrev[j.id]=fileUrl(j.art_path); render(); });
-  return '';
+function gfxWhenText(c){
+  if(!c.date) return '';
+  const d=x=>parseYmd(x); const a=d(c.date), b=c.endDate&&c.endDate>c.date?d(c.endDate):null;
+  const day = b ? `${a.toLocaleDateString('en-US',{month:'long',day:'numeric'})} – ${b.toLocaleDateString('en-US',{month:b.getMonth()===a.getMonth()?undefined:'long',day:'numeric'})}`.replace('– ,','–') : a.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const tm=t=>{ if(!t) return ''; const [h,mi]=t.split(':').map(Number); return `${((h+11)%12)+1}${mi?':'+String(mi).padStart(2,'0'):''} ${h>=12?'PM':'AM'}`; };
+  const time = c.time ? (c.endTime&&!b ? `${tm(c.time)} – ${tm(c.endTime)}` : tm(c.time)) : '';
+  return [day,time].filter(Boolean).join(' · ');
 }
+const gfxPreview=j=> j.status==='art'&&j.art_path ? fileUrl(j.art_path) : '';
 function gfxStatus(j){
   if(gfxStuck(j)) return `<span class="err">This is taking too long.</span>`;
-  if(j.status==='queued'||j.status==='working') return `<span class="spin" aria-hidden="true"></span> ${j.kind==='concept'?'Painting this concept…':'Creating artwork…'} usually 1–2 minutes`;
-  if(j.status==='art'||j.status==='composing') return j.kind==='concept'?'Ready to review':`<span class="spin" aria-hidden="true"></span> Adding the text and logo…`;
+  if(j.status==='queued'||j.status==='working') return `<span class="spin" aria-hidden="true"></span> ${j.kind==='concept'?'Designing this concept…':'Designing…'} usually 1–2 minutes`;
+  if(j.status==='art'||j.status==='composing') return j.kind==='concept'?'Ready to review':`<span class="spin" aria-hidden="true"></span> Saving…`;
   if(j.status==='done') return 'Saved to campaign files';
   if(j.status==='chosen') return 'Chosen concept';
   return `<span class="err">${esc(j.error||'Something went wrong.')}</span>`;
@@ -1181,83 +1190,92 @@ function renderGfxPanel(c){
     const ready=round.list.filter(j=>j.status==='art').length;
     h+=`<div class="gconcepts"><div class="row" style="gap:8px"><strong style="flex:1;font-weight:500;color:var(--slate)">Design concepts</strong><button class="btn ghost sm" data-action="gfx-cancel" data-id="${esc(c.id)}">Start over</button></div>
       <div class="gthumbs">${round.list.map(j=>{ const pv=gfxPreview(j); return `<button class="gthumb" data-action="gfx-review" data-id="${esc(c.id)}" aria-label="${esc(gfxLabel(j))}" style="${pv?`background-image:url('${esc(pv)}')`:''}">${pv?'':`<span>${j.status==='failed'||gfxStuck(j)?'!':'<span class="spin"></span>'}</span>`}</button>`; }).join('')}</div>
-      <div class="small muted">${ready?`${ready} of ${round.list.length} ready.`:'Painting the concepts. This usually takes 1–2 minutes.'}</div>
+      <div class="small muted">${ready?`${ready} of ${round.list.length} ready.`:'Designing the concepts. This usually takes 1–2 minutes.'}</div>
       <button class="btn primary sm" data-action="gfx-review" data-id="${esc(c.id)}" ${ready||round.list.some(j=>j.status==='failed')?'':'disabled'}>Review concepts</button></div>`;
   }
   if(outs.length) h+=`<div class="gjobs">${outs.map(j=>`<div class="gjob ${j.status==='done'?'ok':''}"><div style="min-width:0;flex:1"><div class="gj-t">${esc(gfxLabel(j))}</div><div class="small muted">${gfxStatus(j)}</div></div>
     ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}
     ${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('')}</div>`;
   return `<div class="field"><span class="lbl">AI graphics</span>${h}
-    <div class="row" style="gap:8px">${round?'':`<button class="btn gold sm" data-action="gfx-open" data-id="${esc(c.id)}">✦ Design graphics</button>`}${chosen&&!round?`<button class="btn sm" data-action="gfx-more" data-id="${esc(c.id)}">+ Another social post</button>`:''}</div>
-    ${round?'':`<span class="small muted" style="margin-top:6px">Start with two very different design concepts to choose from. Once you pick one, the poster, slides and social posts are made to match, with this campaign's title, date and place, and saved to Campaign files.</span>`}</div>`;
+    <div class="row" style="gap:8px">${round?'':`<button class="btn gold sm" data-action="gfx-open" data-id="${esc(c.id)}">✦ Design graphics</button>`}${chosen&&!round?`<button class="btn sm" data-action="gfx-more" data-id="${esc(c.id)}">+ Social post</button><button class="btn sm" data-action="gfx-more" data-details="1" data-id="${esc(c.id)}">+ Social post with details</button>`:''}</div>
+    ${round?'':`<span class="small muted" style="margin-top:6px">Start with two very different design concepts, each with the title designed in. Once you pick one, the background, poster and social posts are made to match and saved to Campaign files.</span>`}</div>`;
 }
 function renderGfxModal(m){
   const c=S.campaigns[m.id]; if(!c) return '';
   return `<h2 id="m-t">Design graphics</h2><p class="prose" style="margin:0">${esc(c.title||'Untitled campaign')}${c.date?' · '+esc(fmtRange(c)):''}</p>
+    <div class="field"><label class="lbl" for="gf-name">Title on the graphics</label><input type="text" id="gf-name" value="${esc(m.title||'')}" maxlength="80"><span class="small muted">The only words on the graphics. Shorten it if the campaign name is long.</span></div>
     <p class="small muted" style="margin:0">You'll get two design concepts first. Pick one (or ask for another), and these are made to match:</p>
     ${gfxPickHtml(m)}
     <div class="field"><label class="lbl" for="gf-style">Style</label><select id="gf-style">${GFX_STYLES.map(([v,l])=>`<option value="${v}" ${m.style===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label class="lbl" for="gf-notes">Ideas for the artwork <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="gf-notes" rows="3" placeholder="e.g. candlelight and evergreen branches, a cozy winter feel">${esc(m.notes||'')}</textarea></div>
-    <p class="small muted" style="margin:0">The artwork is made by OpenAI from the campaign's title and description. Your event details are added on top in the brand fonts, so names and dates are always right. Each image costs a few cents; the poster costs a little more.</p>
+    <p class="small muted" style="margin:0">OpenAI designs each graphic, title lettering included, from the campaign's title and description. Each image costs a few cents; the poster costs a little more.</p>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-go" ${V.busy?'disabled':''}>${V.busy?'Planning concepts…':'Create 2 concepts'}</button></div>`;
 }
 function gfxPickHtml(m){
   const ck=(id,label,sub)=>`<label class="check"><input type="checkbox" id="gf-${id}" ${m.pick[id]?'checked':''}><span>${label}<br><span class="small muted">${sub}</span></span></label>`;
   return `<div class="stack" style="gap:10px">
       ${ck('poster','Poster · 36 × 42 inches','Print-ready PDF')}
-      ${ck('title','Title graphic · 16 × 9','For screens and slides, with the event name')}
-      ${ck('background','Background graphic · 16 × 9','The same artwork with no text')}
-      <div class="row" style="gap:10px"><label class="check" style="flex:1"><input type="checkbox" id="gf-social" ${m.social>0?'checked':''}><span>Social posts · 4 × 5<br><span class="small muted">For Facebook and Instagram. You can add more later.</span></span></label>
-        <input type="number" id="gf-count" min="1" max="6" value="${Math.max(1,m.social||1)}" style="width:72px" aria-label="How many social posts"></div>
+      ${ck('title','Title graphic · 16 × 9','The chosen concept, for screens and slides')}
+      ${ck('background','Background graphic · 16 × 9','The same design with the title removed')}
+      <div class="row" style="gap:10px"><label class="check" style="flex:1"><input type="checkbox" id="gf-social" ${m.social>0?'checked':''}><span>Social posts with just the title · 4 × 5<br><span class="small muted">For Facebook and Instagram</span></span></label>
+        <input type="number" id="gf-count" min="1" max="6" value="${Math.max(1,m.social||1)}" style="width:72px" aria-label="How many social posts with just the title"></div>
+      <div class="row" style="gap:10px"><label class="check" style="flex:1"><input type="checkbox" id="gf-socialD" ${m.socialD>0?'checked':''}><span>Social posts with event details · 4 × 5<br><span class="small muted">Title plus date, time and place. You can add more of either later.</span></span></label>
+        <input type="number" id="gf-countD" min="1" max="6" value="${Math.max(1,m.socialD||1)}" style="width:72px" aria-label="How many social posts with event details"></div>
     </div>`;
 }
 function gfxReadPick(){
-  const pick=k=>document.getElementById('gf-'+k).checked; const count=Math.min(6,Math.max(1,parseInt(document.getElementById('gf-count').value,10)||1));
-  return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?count:0 };
+  const pick=k=>document.getElementById('gf-'+k).checked; const n=id=>Math.min(6,Math.max(1,parseInt(document.getElementById(id).value,10)||1));
+  return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?n('gf-count'):0, socialD:pick('socialD')?n('gf-countD'):0 };
 }
 function renderGfxReview(m){
   const c=S.campaigns[m.id]; const round=c&&gfxRound(m.id); if(!round) return `<h2 id="m-t">Design concepts</h2><p class="prose">These concepts are no longer waiting for a choice.</p><div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Close</button></div>`;
   const busy=round.list.some(gfxBusy);
-  return `<h2 id="m-t">Choose a concept</h2><p class="prose" style="margin:0">${esc(c.title||'Untitled campaign')}. Shown as the title graphic; the poster and social posts will be made to match.</p>
+  return `<h2 id="m-t">Choose a concept</h2><p class="prose" style="margin:0">${esc(c.title||'Untitled campaign')}. The one you choose is your title graphic; the background, poster and social posts are made to match. Check the spelling of the title before choosing.</p>
     <div class="gcards">${round.list.map(j=>{ const pv=gfxPreview(j); const ok=j.status==='art';
       return `<div class="gcard"><div class="gprev" style="${pv?`background-image:url('${esc(pv)}')`:''}">${pv?`<a class="open" href="${esc(fileUrl(j.art_path))}" target="_blank" rel="noopener" aria-label="Open ${esc(gfxLabel(j))} artwork full size"></a>`:`<span class="small muted" style="padding:12px;text-align:center">${gfxStatus(j)}</span>`}</div>
         <div class="row" style="gap:8px"><strong style="flex:1;font-weight:500">${esc(gfxLabel(j))}</strong>
         ${ok?`<button class="btn primary sm" data-action="gfx-choose" data-id="${esc(j.id)}">Use this concept</button>`:''}
         ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}</div></div>`; }).join('')}</div>
-    <div class="row"><button class="btn" data-action="gfx-another" data-id="${esc(m.id)}" ${busy||V.busy?'disabled':''}>${round.list.length<3?'Try a third concept':'Try another concept'}</button>${busy?'<span class="small muted"><span class="spin"></span> Painting…</span>':''}<span class="spacer"></span><button class="btn" data-action="modal-close">Close</button></div>`;
+    <div class="row"><button class="btn" data-action="gfx-another" data-id="${esc(m.id)}" ${busy||V.busy?'disabled':''}>${round.list.length<3?'Try a third concept':'Try another concept'}</button>${busy?'<span class="small muted"><span class="spin"></span> Designing…</span>':''}<span class="spacer"></span><button class="btn" data-action="modal-close">Close</button></div>`;
 }
 function renderGfxApprove(m){
   const j=S.gjobs[m.id]; if(!j) return '';
+  const t=m.text||{};
   return `<h2 id="m-t">Make the graphics</h2><p class="prose" style="margin:0">Using ${esc(gfxLabel(j).toLowerCase())}. Choose what to make:</p>
     ${gfxPickHtml(m)}
+    <div class="field"><span class="lbl">Details for the poster and detail posts</span><span class="small muted" style="margin:-2px 0 6px">Exactly as they should appear. Leave a line empty to skip it. The title graphic and background never include these.</span>
+      <div class="stack" style="gap:8px"><input type="text" id="gf-when" value="${esc(t.when||'')}" placeholder="Date and time, e.g. Thursday, December 24 · 4, 5 and 6 PM" aria-label="Date and time">
+      <input type="text" id="gf-where" value="${esc(t.where||'')}" placeholder="Place" aria-label="Place">
+      <input type="text" id="gf-extra" value="${esc(t.extra||'')}" placeholder="Extra line, e.g. Reserve seats at fbss.church" aria-label="Extra line"></div></div>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-action="gfx-review" data-id="${esc(j.campaign_id)}">Back</button><button class="btn primary" data-action="gfx-approve-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Create graphics'}</button></div>`;
 }
 // Each concept gets its own creative direction so the concepts look nothing alike.
 // Claude writes them (different subject, composition and medium); built-in directions are the fallback.
 const GFX_DIRECTIONS=[
-  {name:'Photographic scene', brief:'A real, atmospheric photograph of a scene or close detail connected to the event, with natural light and shallow depth of field.'},
-  {name:'Bold graphic', brief:'A bold, poster-like graphic illustration built from flat shapes, strong silhouettes and a limited palette, with lots of negative space.'},
-  {name:'Symbolic abstract', brief:'An abstract, symbolic image made of textured paint, layered paper and light that suggests the theme without showing a literal scene.'},
-  {name:'Painted still life', brief:'A hand-painted still life of a few meaningful objects from the event, in gouache with visible brushwork, seen from above.'},
-  {name:'Wide landscape', brief:'A sweeping, painterly landscape or skyline at golden hour with small distant elements and a big sky.'},
-  {name:'Pattern of motifs', brief:'A rhythmic decorative pattern of simple motifs from the event, in a modern block-print style.'},
+  {name:'Vintage park print', brief:'A vintage national-park print: heavy condensed block-letter title in dark brown ink with a halftone texture, a double-rule border, and silhouettes from the event\'s world on warm cream paper.'},
+  {name:'Bold TV show', brief:'A high-energy TV-show look: a heavy italic sans-serif title with neon red and blue outline glows, over a deep blue duotone photograph with streaked light.'},
+  {name:'Script and still life', brief:'Elegant hand-lettered script title in white with a gold edge, on a textured midnight-blue sky with a single star; a painted still life of meaningful objects runs along the bottom.'},
+  {name:'Editorial serif', brief:'A modern editorial layout: a huge high-contrast serif title in two colors, stacked and centered on off-white, with fine line-drawn botanical illustrations around it and one cut-out photo overlapping the letters.'},
+  {name:'Paper cutout', brief:'Layered paper-cutout illustration with soft shadows; a chunky rounded title cut from paper, in bright but warm colors, centered.'},
+  {name:'Watercolor wash', brief:'Loose watercolor washes and hand-drawn ink details; a brush-lettered title in deep color across the middle with lots of white space.'},
 ];
-async function gfxDirections(c, n, prior, style, notes){
+async function gfxDirections(c, n, prior, style, notes, title){
   const used=prior.map(p=>p.name);
   const fallback=()=>GFX_DIRECTIONS.filter(d=>!used.includes(d.name)).slice(0,n).concat(GFX_DIRECTIONS).slice(0,n);
   if(!(CFG&&CFG.aiEnabled)) return fallback();
-  const styleRule = style&&style!=='auto' ? `Every direction must use this medium: ${GFX_STYLES.find(x=>x[0]===style)[1]}. Make them differ completely in subject or visual metaphor, composition, viewpoint, lighting and color emphasis.`
-    : 'Make them differ completely in medium or technique (for example photograph vs. flat graphic illustration vs. textured abstract painting), subject or visual metaphor, composition, viewpoint and lighting.';
+  const styleRule = style&&style!=='auto' ? `Every direction must use this imagery style: ${GFX_STYLES.find(x=>x[0]===style)[1]}. Make them differ completely in lettering style, layout, color palette and subject.`
+    : 'Make them differ completely in lettering style, layout, color palette, imagery and medium.';
   const prompt=`You are the art director for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas.
-Write ${n} creative direction${n>1?'s':''} for the background artwork of an event graphic. The artwork has no text; the title is added later on the left side, so the left half must stay calm.
-Event: ${c.title||'Church event'}
+Write ${n} design direction${n>1?'s':''} for an event graphic where the title lettering is designed into the artwork, like professional church media design.
+Examples of the range we like (do not copy them): a vintage national-park print with heavy condensed block letters and a double-rule border; a TV-show look with a heavy italic title and neon outline glow over a blue duotone photo; elegant hand-lettered script with a gold edge over a textured night sky and a painted still life; a huge two-color editorial serif with line-drawn botanicals and a cut-out photo.
+Title on the graphic: ${title||c.title||'Church event'}
 When: ${fmtRange(c)||'not set'}
 Where: ${c.location||'not set'}
 About: ${(c.description||'').slice(0,800)||'not given'}
 ${notes?'Ideas from staff: '+notes:''}
 ${styleRule}
 ${prior.length?'They must also be completely different from these directions already shown:\n'+prior.map(p=>'- '+p.name+': '+p.brief).join('\n'):''}
-Each brief is 2 or 3 sentences, concrete and visual: what is pictured, how it's framed, the medium and the light. Tasteful and welcoming for a church; no text, logos or close-up faces.
+Each brief is 2 or 3 sentences, concrete and visual: the lettering style for the title (for example script, condensed block, heavy italic, high-contrast serif, hand-brushed), the layout, the color palette, the imagery and medium, and the texture. The title is the only text. Tasteful and welcoming for a church; no logos or close-up faces.
 Reply with only JSON: {"directions":[{"name":"2 to 4 word name","brief":"..."}]}`;
   try{
     const r=await api('ai-copy',{prompt}); const m=(r.text||'').match(/\{[\s\S]*\}/); const d=m?JSON.parse(m[0]).directions:null;
@@ -1311,9 +1329,10 @@ async function gfxCompose(){
     S.gjobs[j.id]=claimed[0]; render();
     const c=S.campaigns[cid]; const art=fileUrl(j.art_path); const base=safeTitle(c.title);
     const made=[];
-    if(j.kind==='poster') made.push([`${base} - Poster 36x42.pdf`, await GFX.makePoster(c, art)]);
-    if(j.kind==='wide'){ if(j.options.title!==false) made.push([`${base} - Title 16x9.jpg`, await GFX.makeTitle(c, art)]); if(j.options.background) made.push([`${base} - Background 16x9.jpg`, await GFX.makeBackground(art)]); }
-    if(j.kind==='social') made.push([`${base} - Social 4x5${j.options.variation>1?' ('+j.options.variation+')':''}.jpg`, await GFX.makeSocial(c, art)]);
+    if(j.kind==='poster') made.push([`${base} - Poster 36x42.pdf`, await GFX.makePoster(art)]);
+    if(j.kind==='title'||j.kind==='wide') made.push([`${base} - Title 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
+    if(j.kind==='background') made.push([`${base} - Background 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
+    if(j.kind==='social') made.push([`${base} - Social 4x5${j.options.variation>1?' ('+j.options.variation+')':''}.jpg`, await GFX.makeImage(art,1080,1350)]);
     const outputs=[];
     for(const [name, blob] of made){
       const path=`campaigns/${cid}/${uid().slice(0,8)}-${safeName(name)}`;

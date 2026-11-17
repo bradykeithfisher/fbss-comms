@@ -308,3 +308,10 @@ alter table public.graphics_jobs drop constraint if exists graphics_jobs_kind_ch
 alter table public.graphics_jobs add constraint graphics_jobs_kind_check check (kind in ('concept','poster','wide','social'));
 alter table public.graphics_jobs drop constraint if exists graphics_jobs_status_check;
 alter table public.graphics_jobs add constraint graphics_jobs_status_check check (status in ('queued','working','art','composing','done','failed','chosen','passed'));
+
+-- =====================================================================
+-- Update 11: the AI designs the whole graphic, title included. The chosen concept is the title graphic;
+-- 'background' is the same design with the words removed.
+-- =====================================================================
+alter table public.graphics_jobs drop constraint if exists graphics_jobs_kind_check;
+alter table public.graphics_jobs add constraint graphics_jobs_kind_check check (kind in ('concept','title','background','poster','wide','social'));

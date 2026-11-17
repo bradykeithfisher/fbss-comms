@@ -288,19 +288,24 @@ In the studio, each item becomes an announcement section tagged "From the calend
 Sections nobody edits stay in step with the calendar. Once someone edits one in the studio, the calendar leaves it alone. No database changes are needed.
 
 ## AI graphics
-Each campaign has a **✦ Design graphics** button (under Campaign files). It makes any of:
-- a 36 × 42 inch poster (print-ready PDF)
-- a 16 × 9 title graphic and a 16 × 9 background graphic
-- 4 × 5 social posts (as many as you like; **+ Another social post** adds one more)
+Each campaign has a **✦ Design graphics** button (under Campaign files). OpenAI designs every graphic as a finished
+piece, with the title lettering designed into the artwork, like professional church media.
 
-It starts with **two design concepts** (shown as the title graphic). Claude writes a different creative direction for each (subject, composition and medium) so they look nothing alike. Pick one with **Use this concept**, or click
-**Try a third concept** (and more if needed). Once you choose, every deliverable is made to match the chosen concept:
-the concept itself becomes the title and background art, and OpenAI recreates it in the poster and social shapes.
+1. **Design graphics:** set the title for the graphics (the only words on the concepts), pick what you'll want in the end,
+   an optional style and ideas. Claude writes a different design direction for each concept (lettering style, layout,
+   colors and imagery), so the two concepts look nothing alike.
+2. **Review concepts:** choose one with **Use this concept**, or click **Try a third concept** (and more if needed).
+   Check the spelling of the title before choosing.
+3. **Make the graphics:** confirm the words for the poster and detail posts (date and time, place, an extra line,
+   exactly as they should appear). Then:
+   - **Title graphic 16 × 9:** the chosen concept itself, title only.
+   - **Background 16 × 9:** the same design with the title removed.
+   - **Poster 36 × 42 (PDF):** the design re-laid-out as a poster, with the title and all the details.
+   - **Social posts 4 × 5:** with just the title, or with the event details. Add more later with **+ Social post** or
+     **+ Social post with details**.
 
-OpenAI creates text-free artwork from the campaign's title, description and the style you pick. The app then adds the
-date, time, place and title in the brand fonts, so names and dates are always spelled right, and saves the
-finished files to the campaign. You can leave the page while the artwork is being made; it finishes the next time
-anyone opens the campaign.
+Finished files are saved to the campaign. You can leave the page while they're made; they finish the next time anyone
+opens the campaign. The AI renders the words itself, so check spelling on the finished files too.
 
 **Setup (one time):**
 1. Create an API key at platform.openai.com (API keys) and add a little credit (each image costs a few cents; the poster a bit more).
@@ -309,4 +314,4 @@ anyone opens the campaign.
 3. The Edge Function lives in `supabase/functions/graphics`. It's already deployed; to redeploy after changing it,
    use the Supabase CLI: `supabase functions deploy graphics --no-verify-jwt`.
 
-Brand fonts are in `public/assets/fonts` (SIL Open Font License); the PDF maker is jsPDF (MIT) in `public/vendor`.
+The PDF maker is jsPDF (MIT) in `public/vendor`.

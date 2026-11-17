@@ -1,8 +1,8 @@
 // FBSS Communication Calendar: AI artwork for campaign graphics (Supabase Edge Function "graphics").
 //
 // The app adds a row to graphics_jobs, then calls this function with the row's id. This function
-// asks OpenAI for text-free artwork in the right shape, saves it to Storage (files/campaigns/<id>/art/),
-// and marks the row 'art'. The app then lays the event's text and logo on top and saves the finished files.
+// asks OpenAI for a finished design (lettering included) in the right shape, saves it to Storage
+// (files/campaigns/<id>/art/) and marks the row 'art'. The app then saves the finished files to the campaign.
 //
 // Secrets (Supabase Dashboard > Edge Functions > Secrets):
 //   OPENAI_API_KEY        required
@@ -46,49 +46,60 @@ const svcHeaders = (extra: Record<string, string> = {}) => {
   return k.startsWith('sb_') ? { apikey: k, ...extra } : { apikey: k, authorization: 'Bearer ' + k, ...extra };
 };
 
-// The artwork's pixel size for each kind. All multiples of 16, as the image models require.
+// The image's pixel size for each kind. All multiples of 16, as the image models require.
 export const SIZES: Record<string, [number, number]> = {
-  poster: [2304, 2688], // 6:7, the shape of a 36 x 42 inch poster
-  wide: [2048, 1152],   // 16:9, for the title and background graphics
-  social: [1088, 1360], // 4:5, for Facebook and Instagram
-  concept: [2048, 1152], // concepts are 16:9; the chosen one becomes the title and background art
+  concept: [2048, 1152],    // 16:9; the chosen concept is the title graphic
+  title: [2048, 1152],
+  background: [2048, 1152], // the chosen design with the words removed
+  wide: [2048, 1152],
+  poster: [2592, 3024],     // 6:7, the shape of a 36 x 42 inch poster
+  social: [1088, 1360],     // 4:5, for Facebook and Instagram
 };
-const COMPOSITION: Record<string, string> = {
-  poster: 'A tall vertical artwork. Put the main subject in the upper two-thirds. Keep the bottom third simple and calm, because a text panel will cover it.',
-  wide: 'A wide 16:9 artwork. Keep the main subject toward the right side and leave the left half calm and uncluttered, because a title will be placed there.',
-  social: 'A vertical 4:5 artwork. Put the main subject in the upper part and keep the lower third calm and simple, because a caption band will cover it.',
-  concept: 'A wide 16:9 artwork. Keep the main subject toward the right side and leave the left half calm and uncluttered, because a title will be placed there.',
+const FORMAT: Record<string, string> = {
+  concept: 'A wide 16:9 title graphic for screens and slides.',
+  title: 'A wide 16:9 title graphic for screens and slides.',
+  wide: 'A wide 16:9 title graphic for screens and slides.',
+  poster: 'A tall 36 x 42 inch printed poster (6:7). Give the title a strong poster layout with comfortable margins.',
+  social: 'A vertical 4:5 Instagram and Facebook post. Keep the title large and readable on a phone, with comfortable margins.',
 };
-const STYLES: Record<string, string> = {
-  auto: 'Choose the visual style that best fits this event.',
-  photo: 'Photographic and realistic, with natural, warm light.',
-  illustrated: 'A modern editorial illustration with clean shapes and subtle paper texture.',
-  watercolor: 'A soft, hand-painted watercolor on textured paper.',
-  textured: 'An abstract, textured background of layered paper, brushstrokes and light. No people or objects.',
-};
-
-export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, unknown>) {
-  const desc = String(camp.description || '').replace(/\s+/g, ' ').slice(0, 700);
-  const ref = opts.ref ? [
-    `The attached image is the approved design concept. Recreate the same artwork, with the same style, subject, colors, lighting and mood, reframed for the shape described below. It should look like part of the same set.`,
-  ] : [];
-  const lines = [
-    ...ref,
-    `Artwork for a church event graphic for First Baptist Sulphur Springs, a Baptist church in a small Texas town. Tasteful, warm and welcoming.`,
-    `Event: ${camp.title || 'Church event'}.`,
-    desc ? `About the event: ${desc}` : '',
-    camp.location ? `Place: ${camp.location}.` : '',
-    opts.brief ? `Creative direction (follow this closely): ${String(opts.brief).slice(0, 800)}` : '',
-    opts.brief && String(opts.style || 'auto') === 'auto' ? '' : `Style: ${STYLES[String(opts.style || 'auto')] || STYLES.auto}`,
-    opts.notes ? `Ideas from the church staff: ${String(opts.notes).slice(0, 600)}` : '',
-    `Where it suits the direction, lean on the church's colors: rust red (#91412D), warm gold (#B47E3D), moss green (#8C9077), dusty blue (#ACBABD), slate (#414A55) and cream (#EFE9DB).`,
-    COMPOSITION[kind] || '',
-    kind === 'concept' && !opts.brief && Number(opts.variation) > 1 ? `This is design concept ${Number(opts.variation)}: take a clearly different creative direction (subject, composition or treatment) from the other concepts.` : '',
-    kind !== 'concept' && Number(opts.variation) > 1 ? `This is version ${Number(opts.variation)}: use a different crop or viewpoint of the same scene.` : '',
-    `Do not include any text, letters, numbers, words, signs, logos or watermarks anywhere in the image.`,
-    `If people appear, show them from behind, in silhouette or at a distance, with no close-up faces.`,
+// The title graphic and title-only social posts carry just the title. The poster, and social posts marked
+// "with details", also carry the event details the staff typed (date and time, place, an extra line).
+function wordsFor(kind: string, opts: Record<string, any>, t: Record<string, string>) {
+  const title = String(t.title).trim().slice(0, 120);
+  const details = kind === 'poster' || (kind === 'social' && opts.details)
+    ? [['Date and time', t.when], ['Place', t.where], ['Extra line', t.extra]].filter(([, v]) => String(v || '').trim()) : [];
+  if (!details.length) return [
+    `The only words on the graphic are the title, spelled exactly: "${title}". Make the title a designed part of the artwork (its lettering style, size and placement belong to the design).`,
+    `No other words, letters or numbers anywhere. No logos, no watermarks, no made-up text.`,
   ];
-  return lines.filter(Boolean).join('\n');
+  return [
+    `Words on the graphic, each spelled exactly as written:\n- Title (the largest, most designed element, part of the artwork): "${title}"\n` + details.map(([k, v]) => `- ${k}: "${String(v).trim().slice(0, 160)}"`).join('\n'),
+    `Set the details smaller and clearly readable, in a type style that suits the design, in a clean hierarchy under or around the title.`,
+    `No other words, letters or numbers anywhere. No logos, no watermarks, no made-up text.`,
+  ];
+}
+export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, any>) {
+  const t = (opts.text || {}) as Record<string, string>;
+  if (!t.title) t.title = camp.title || 'Church event';
+  if (kind === 'background') {
+    return [
+      `The attached image is an approved church event graphic. Recreate it as a text-free background: remove every word, letter and number, and fill those areas naturally so the image looks complete and intentional.`,
+      `Keep everything else the same: the artwork, colors, textures, borders and composition.`,
+      `Do not add any new text, logos or watermarks.`,
+    ].join('\n');
+  }
+  const desc = String(camp.description || '').replace(/\s+/g, ' ').slice(0, 600);
+  return [
+    opts.ref ? `The attached image is the approved design concept. Create the version described below of this same design: the same lettering style, colors, imagery, textures and overall look, re-laid-out for the new shape so it looks like part of the same set.` : '',
+    `Design a finished, professional event graphic for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas. It should look like the work of a skilled church graphic designer: expressive, custom-feeling lettering that is part of the design, a strong hierarchy, and imagery that fits the event.`,
+    `Event: ${t.title}.${desc ? ' About it: ' + desc : ''}`,
+    opts.brief ? `Design direction (follow this closely): ${String(opts.brief).slice(0, 900)}` : '',
+    !opts.brief && opts.style && opts.style !== 'auto' ? `Visual style: ${opts.style}.` : '',
+    opts.notes ? `Ideas from the church staff: ${String(opts.notes).slice(0, 600)}` : '',
+    `Format: ${FORMAT[kind] || FORMAT.concept}`,
+    ...wordsFor(kind, opts, t),
+    `If people appear, show them from behind, in silhouette or at a distance, with no close-up faces.`,
+  ].filter(Boolean).join('\n');
 }
 
 async function rest(path: string, init: RequestInit = {}) {
@@ -166,7 +177,7 @@ export async function handler(req: Request): Promise<Response> {
   const claimed = await rest(`graphics_jobs?id=eq.${id}&status=eq.queued`, { method: 'PATCH', body: JSON.stringify({ status: 'working', error: '', updated_at: new Date().toISOString() }) });
   const job = claimed && claimed[0];
   if (!job) return json({ error: 'That graphic is already being made.' }, 409);
-  const camps = await rest(`campaigns?id=eq.${job.campaign_id}&select=title,description,location`);
+  const camps = await rest(`campaigns?id=eq.${job.campaign_id}&select=title,description`);
   const camp = (camps && camps[0]) || {};
   const work = (async () => {
     try { const path = await makeArt(job, camp); await setJob(id, { status: 'art', art_path: path }); }
