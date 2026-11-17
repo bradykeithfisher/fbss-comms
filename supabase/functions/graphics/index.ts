@@ -23,8 +23,12 @@ const firstKey = (name: string, legacy: string) => {
   return env(legacy);
 };
 const URL_ = () => env('SUPABASE_URL').replace(/\/$/, '');
-const SECRET = () => firstKey('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY');
-const PUBLIC = () => firstKey('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY');
+// API keys are plain ASCII. Pasted keys sometimes carry invisible characters, quotes or a "Bearer " prefix,
+// which make the request fail before it's sent, so keep only the key itself.
+export const cleanKey = (k: string) => k.replace(/^\s*(bearer\s+)?["'“”‘’]?/i, '').replace(/[^\x21-\x7E]/g, '').replace(/["'“”‘’]+$/, '');
+const OPENAI_KEY = () => cleanKey(env('OPENAI_API_KEY'));
+const SECRET = () => cleanKey(firstKey('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY'));
+const PUBLIC = () => cleanKey(firstKey('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY'));
 const svcHeaders = (extra: Record<string, string> = {}) => {
   const k = SECRET();
   return k.startsWith('sb_') ? { apikey: k, ...extra } : { apikey: k, authorization: 'Bearer ' + k, ...extra };
@@ -115,7 +119,7 @@ export async function makeArt(job: Record<string, any>, camp: Record<string, str
   if (opts.ref) req.images = [{ image_url: publicFileUrl(String(opts.ref)) }];
   const res = await fetch(`https://api.openai.com/v1/images/${opts.ref ? 'edits' : 'generations'}`, {
     method: 'POST',
-    headers: { authorization: 'Bearer ' + env('OPENAI_API_KEY'), 'content-type': 'application/json' },
+    headers: { authorization: 'Bearer ' + OPENAI_KEY(), 'content-type': 'application/json' },
     body: JSON.stringify(req),
   });
   const data = await res.json().catch(() => ({}));
@@ -123,6 +127,7 @@ export async function makeArt(job: Record<string, any>, camp: Record<string, str
     const msg = (data && data.error && data.error.message) || `OpenAI answered ${res.status}`;
     if (/safety|moderation|rejected/i.test(msg)) throw new Error("OpenAI's safety check rejected this request. Try different artwork ideas.");
     if (/billing|quota|credit/i.test(msg)) throw new Error('The OpenAI account is out of credit. Add credit at platform.openai.com.');
+    if (res.status === 401) throw new Error('OpenAI didn\'t accept the API key. Check OPENAI_API_KEY in Supabase (Edge Functions > Secrets).');
     throw new Error(msg);
   }
   const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
@@ -135,11 +140,12 @@ export async function makeArt(job: Record<string, any>, camp: Record<string, str
 
 export async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
-  if (req.method === 'GET') return json({ ready: !!env('OPENAI_API_KEY') });
+  if (req.method === 'GET') return json({ ready: !!OPENAI_KEY() });
   if (req.method !== 'POST') return json({ error: 'Use POST' }, 405);
   const user = await signedInUser(req);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
-  if (!env('OPENAI_API_KEY')) return json({ error: "AI artwork isn't set up yet. Add OPENAI_API_KEY in Supabase under Edge Functions > Secrets." }, 503);
+  if (!OPENAI_KEY()) return json({ error: "AI artwork isn't set up yet. Add OPENAI_API_KEY in Supabase under Edge Functions > Secrets." }, 503);
+  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(OPENAI_KEY())) return json({ error: "The OpenAI key saved in Supabase doesn't look right. It should start with sk- and contain no spaces. Paste it again under Edge Functions > Secrets (OPENAI_API_KEY)." }, 503);
   const body = await req.json().catch(() => ({}));
   const id = String(body.jobId || '');
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Bad request.' }, 400);
