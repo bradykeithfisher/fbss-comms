@@ -3,7 +3,8 @@ import { db, churchTz } from '../lib/shared.mjs';
 import { layout, sendEmail, appUrl, todayIn, esc } from '../lib/email.mjs';
 export default async () => {
   const today = todayIn(churchTz());
-  const due = await db(`destinations?publish_date=eq.${today}&assignee_id=not.is.null&status=neq.posted&or=(due_reminded_on.is.null,due_reminded_on.neq.${today})&select=id,channel_id,assignee_id,publish_date,status,title,campaigns(title)`);
+  const due = (await db(`destinations?publish_date=eq.${today}&assignee_id=not.is.null&status=neq.posted&or=(due_reminded_on.is.null,due_reminded_on.neq.${today})&select=id,channel_id,assignee_id,publish_date,status,title,campaign_id,campaigns(title,status)`))
+    .filter((d) => !d.campaign_id || !d.campaigns || d.campaigns.status === 'approved');
   if (!due.length) return new Response('nothing due');
   const s = await db('app_settings?id=eq.1&select=data');
   const chans = (s[0]?.data?.channels) || [];

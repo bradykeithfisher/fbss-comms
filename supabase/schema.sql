@@ -235,3 +235,33 @@ create policy "admins delete requests" on public.requests for delete to authenti
 alter table public.destinations add column if not exists publish_state jsonb not null default '{}'::jsonb;
 alter table public.destinations add column if not exists publish_pending boolean not null default false;
 create index if not exists destinations_pending_idx on public.destinations(id) where publish_pending;
+
+-- =====================================================================
+-- Update 7: campaign approval. Editors' campaigns start as 'pending' until an admin approves.
+-- =====================================================================
+alter table public.campaigns add column if not exists status text not null default 'approved';
+alter table public.campaigns add column if not exists reviewed_by uuid references public.profiles(id) on delete set null;
+alter table public.campaigns add column if not exists reviewed_at timestamptz;
+alter table public.campaigns add column if not exists review_note text not null default '';
+do $$ begin
+  alter table public.campaigns add constraint campaigns_status_check check (status in ('pending','approved','declined'));
+exception when duplicate_object then null; end $$;
+
+-- Only admins (or the server) can set a campaign's approval status. Editors' new campaigns are always pending,
+-- and editors can't change the status of an existing one.
+create or replace function public.guard_campaign_status() returns trigger language plpgsql as $$
+begin
+  if current_user in ('service_role','postgres','supabase_admin') then return new; end if;
+  if public.is_admin() then
+    if tg_op = 'INSERT' and new.created_by is null then new.created_by := auth.uid(); end if;
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    new.status := 'pending'; new.created_by := auth.uid(); new.reviewed_by := null; new.reviewed_at := null; new.review_note := '';
+  else
+    new.status := old.status; new.reviewed_by := old.reviewed_by; new.reviewed_at := old.reviewed_at; new.review_note := old.review_note;
+  end if;
+  return new;
+end $$;
+drop trigger if exists campaigns_guard_status on public.campaigns;
+create trigger campaigns_guard_status before insert or update on public.campaigns for each row execute function public.guard_campaign_status();

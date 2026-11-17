@@ -83,7 +83,7 @@ const safeName = n => String(n||'file').normalize('NFKD').replace(/[^\w.\-]+/g,'
 /* ---------- state ---------- */
 let sb=null, CFG=null, session=null, rtChannel=null;
 const S = { settings:{channels:clone(DEFAULT_CHANNELS), voice:DEFAULT_VOICE, handle:'First Baptist Sulphur Springs'}, campaigns:{}, dests:{}, team:{}, requests:{}, loaded:false, social:null };
-const V = { screen:'boot', view:'calendar', campaignId:null, calMode: ls('cc.calMode')||'week', anchor:new Date(), fChan:'', fPerson:'', openDest:null, modal:null, ai:{}, workPerson:'', reqFilter:'new', requestId:null, pendingDest:null, authMsg:'', authErr:'', authMode:'login', busy:false, dragging:false };
+const V = { screen:'boot', view:'calendar', campaignId:null, calMode: ls('cc.calMode')||(window.matchMedia('(max-width: 760px)').matches?'list':'week'), anchor:new Date(), fChan:'', fPerson:'', openDest:null, modal:null, ai:{}, workPerson:'', reqFilter:'new', requestId:null, pendingDest:null, authMsg:'', authErr:'', authMode:'login', busy:false, dragging:false };
 const settings = () => S.settings;
 const me = () => session && S.team[session.user.id];
 const isAdmin = () => !!(me() && me().role==='admin');
@@ -97,15 +97,18 @@ const ONEOFF_COLOR = '#414A55';
 // A one-off post has no campaign: its own title and details stand in for the campaign's.
 const campOf = d => !d.campaignId ? {title:d.title||'One-off post', color:ONEOFF_COLOR, description:d.details||'', oneOff:true, files:[]} : (S.campaigns[d.campaignId] || {title:'(Campaign removed)', color:'#7D7468'});
 const requestFor = cid => cid && Object.values(S.requests).find(r=>r.campaign_id===cid && r.status==='new');
-const isPending = cid => !!requestFor(cid);
+const isPending = cid => { const c=cid&&S.campaigns[cid]; return !!c && (c._draft || c.status==='pending'); };
+const isDeclined = cid => { const c=cid&&S.campaigns[cid]; return !!c && c.status==='declined'; };
+const hasDrafts = () => Object.values(S.campaigns).some(c=>c._draft);
+window.addEventListener('beforeunload', e=>{ if(hasDrafts()){ e.preventDefault(); e.returnValue=''; } });
 const fileUrl = path => path ? sb.storage.from('files').getPublicUrl(path).data.publicUrl : '';
 
 /* ---------- row mapping ---------- */
 const t5 = t => t ? String(t).slice(0,5) : '';
 const rowToCamp = r => ({ id:r.id, title:r.title||'', date:r.start_date||'', time:t5(r.start_time), endDate:r.end_date||'', endTime:t5(r.end_time), adStart:r.ad_start||'', adEnd:r.ad_end||'',
-  location:r.location||'', description:r.description||'', ministry:r.ministry||'', link:r.link||'', color:r.color||PALETTE[0], coverPath:r.cover_path||'', files:Array.isArray(r.files)?r.files:[] });
+  location:r.location||'', description:r.description||'', ministry:r.ministry||'', link:r.link||'', color:r.color||PALETTE[0], coverPath:r.cover_path||'', files:Array.isArray(r.files)?r.files:[], status:r.status||'approved', createdBy:r.created_by||'', reviewedBy:r.reviewed_by||'', reviewNote:r.review_note||'' });
 const campToRow = c => ({ id:c.id, title:c.title||'Untitled campaign', start_date:c.date||null, start_time:c.time||null, end_date:c.endDate||null, end_time:c.endTime||null, ad_start:c.adStart||null, ad_end:c.adEnd||null,
-  location:c.location||'', description:c.description||'', ministry:c.ministry||'', link:c.link||'', color:c.color||PALETTE[0], cover_path:c.coverPath||'', files:c.files||[] });
+  location:c.location||'', description:c.description||'', ministry:c.ministry||'', link:c.link||'', color:c.color||PALETTE[0], cover_path:c.coverPath||'', files:c.files||[], status:c.status||'approved' });
 const rowToDest = r => ({ id:r.id, campaignId:r.campaign_id||'', title:r.title||'', details:r.details||'', channelId:r.channel_id, date:r.publish_date||'', time:t5(r.publish_time), assigneeId:r.assignee_id||'', status:r.status||'draft',
   headline:r.headline||'', copy:r.copy||'', notes:r.notes||'', imagePaths:Array.isArray(r.image_paths)?r.image_paths:[], autoPublish:!!r.auto_publish,
   publishedAt:r.published_at||'', externalUrl:r.external_url||'', publishError:r.publish_error||'', publishedParts:r.published_parts||{}, publishPending:!!r.publish_pending });
@@ -140,10 +143,10 @@ function saveErr(e){ const m=(e && (e.message||e.error_description)) || 'unknown
 function flushAll(){ for(const k of Object.keys(timers)){ clearTimeout(timers[k]); delete timers[k]; writeKey(k); } }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flushAll(); });
 window.addEventListener('pagehide', flushAll);
-const saveCampaign = (c,delay) => { S.campaigns[c.id]=c; delay ? scheduleSave('c:'+c.id,delay) : writeKey('c:'+c.id); };
-const saveDest = (d,delay) => { S.dests[d.id]=d; delay ? scheduleSave('d:'+d.id,delay) : writeKey('d:'+d.id); };
+const saveCampaign = (c,delay) => { S.campaigns[c.id]=c; if(c._draft) return; delay ? scheduleSave('c:'+c.id,delay) : writeKey('c:'+c.id); };
+const saveDest = (d,delay) => { S.dests[d.id]=d; const c=d.campaignId&&S.campaigns[d.campaignId]; if(c&&c._draft) return; delay ? scheduleSave('d:'+d.id,delay) : writeKey('d:'+d.id); };
 const saveSettings = delay => delay ? scheduleSave('s:1',delay) : writeKey('s:1');
-const removeDest = id => { delete S.dests[id]; writeKey('d:'+id); };
+const removeDest = id => { const d=S.dests[id]; const c=d&&d.campaignId&&S.campaigns[d.campaignId]; delete S.dests[id]; if(!(c&&c._draft)) writeKey('d:'+id); };
 const removeCampaign = id => { for(const d of destsOf(id)) delete S.dests[d.id]; delete S.campaigns[id]; writeKey('c:'+id); };
 
 async function notifyAssigned(id, quiet){
@@ -200,8 +203,10 @@ async function loadAll(){
   const err = c.error||d.error||s.error||p.error;
   S.requests = Object.fromEntries(((rq&&rq.data)||[]).map(r=>[r.id,r]));
   if(err){ toast('Could not load data: '+err.message); }
+  const drafts=Object.values(S.campaigns).filter(x=>x._draft); const draftDests=Object.values(S.dests).filter(x=>drafts.some(c=>c.id===x.campaignId));
   S.campaigns = Object.fromEntries((c.data||[]).map(r=>[r.id,rowToCamp(r)]));
   S.dests = Object.fromEntries((d.data||[]).map(r=>[r.id,rowToDest(r)]));
+  for(const x of drafts) S.campaigns[x.id]=x; for(const x of draftDests) S.dests[x.id]=x;
   S.team = Object.fromEntries((p.data||[]).map(r=>[r.id,rowToMember(r)]));
   applySettings(s.data && s.data.data);
   S.loaded=true;
@@ -292,12 +297,21 @@ function renderAuth(){
 }
 
 /* ---------- header & views ---------- */
+// Built-in tab icons (Lucide shapes), so the phone tab bar never depends on a network request.
+const TAB_ICONS = {
+  'calendar-days':'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+  'layers':'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  'list-checks':'<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/>',
+  'inbox':'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  'settings':'<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>'
+};
 function renderHeader(){
-  const tab=(h,l,on)=>`<a href="#${h}" class="${on?'on':''}">${l}</a>`; const m=me();
+  const ti=n=>`<svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS[n]||''}</svg>`;
+  const tab=(h,l,on,icon)=>`<a href="#${h}" class="${on?'on':''}">${ti(icon)}<span>${l}</span></a>`; const m=me();
   return `<header class="topbar">
     <a href="#calendar" aria-label="Calendar home"><img class="logo" src="/assets/logo-horizontal.svg" alt="First Baptist Sulphur Springs"></a>
-    <nav class="tabs" aria-label="Main">${tab('calendar','Calendar',V.view==='calendar')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign')}${tab('my-work','My work',V.view==='my-work')}<a href="#requests" class="${V.view==='requests'?'on':''}">Requests${(()=>{ const n=Object.values(S.requests).filter(r=>r.status==='new').length; return n?`<span class="count">${n}</span>`:''; })()}</a>${tab('settings','Settings',V.view==='settings')}</nav>
-    <button class="btn primary" data-action="new-campaign">+ New campaign</button>
+    <nav class="tabs" aria-label="Main">${tab('calendar','Calendar',V.view==='calendar','calendar-days')}${tab('campaigns','Campaigns',V.view==='campaigns'||V.view==='campaign','layers')}${tab('my-work','My work',V.view==='my-work','list-checks')}<a href="#requests" class="${V.view==='requests'?'on':''}">${ti('inbox')}<span>Approvals</span>${(()=>{ const n=Object.values(S.requests).filter(r=>r.status==='new').length + pendingCampaigns().length; return n?`<span class="count">${n}</span>`:''; })()}</a>${tab('settings','Settings',V.view==='settings','settings')}</nav>
+    <button class="btn primary newbtn" data-action="new-campaign" aria-label="New campaign">+<span class="wide-only"> New campaign</span></button>
     <div class="usermenu">${m?av(m.id,'lg'):''}<span class="nm">${esc(m?m.name:'')}</span><button class="btn ghost sm" data-action="sign-out">Sign out</button></div>
   </header>`;
 }
@@ -318,15 +332,15 @@ function chip(d,label,removable){ const c=campOf(d), ch=channelById(d.channelId)
 function evtBtn(c){ return `<button class="evt ${isPending(c.id)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}" title="Event: ${esc(c.title)}">★ <span>${esc(c.title)}</span></button>`; }
 function memberOptions(sel, includeNone=true, noneLabel='Unassigned'){ return (includeNone?`<option value="">${noneLabel}</option>`:'') + teamList().map(m=>`<option value="${esc(m.id)}" ${m.id===sel?'selected':''}>${esc(m.name)}</option>`).join(''); }
 function channelOptions(sel){ return settings().channels.map(c=>`<option value="${esc(c.id)}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join(''); }
-function filteredDests(){ return Object.values(S.dests).filter(d=>(!V.fChan||d.channelId===V.fChan) && (!V.fPerson || (V.fPerson==='none'? !d.assigneeId : d.assigneeId===V.fPerson))); }
+function filteredDests(){ return Object.values(S.dests).filter(d=>!isDeclined(d.campaignId) && (!V.fChan||d.channelId===V.fChan) && (!V.fPerson || (V.fPerson==='none'? !d.assigneeId : d.assigneeId===V.fPerson))); }
 
 /* ---------- calendar ---------- */
 function renderCalendar(){
   const s=settings(); const today=todayStr(); const list=filteredDests();
   const byKey={}; for(const d of list){ (byKey[d.date+'|'+d.channelId] ||= []).push(d); (byKey[d.date] ||= []).push(d); }
-  const evts={}; for(const c of Object.values(S.campaigns)){ for(const k of eventDays(c)) (evts[k] ||= []).push(c); }
+  const evts={}; for(const c of Object.values(S.campaigns)){ if(c.status==='declined') continue; for(const k of eventDays(c)) (evts[k] ||= []).push(c); }
   let days, label;
-  if(V.calMode==='week'){ const st=startOfWeek(V.anchor); days=[...Array(7)].map((_,i)=>addDays(st,i));
+  if(V.calMode==='week'||V.calMode==='list'){ const st=startOfWeek(V.anchor); days=[...Array(7)].map((_,i)=>addDays(st,i));
     const m0=days[0].toLocaleDateString('en-US',{month:'short'}), m6=days[6].toLocaleDateString('en-US',{month:'short'});
     label=`${m0} ${days[0].getDate()} – ${m0===m6?'':m6+' '}${days[6].getDate()}, ${days[6].getFullYear()}`; }
   else { const first=new Date(V.anchor.getFullYear(),V.anchor.getMonth(),1); const st=startOfWeek(first); days=[...Array(42)].map((_,i)=>addDays(st,i));
@@ -336,14 +350,23 @@ function renderCalendar(){
   const toolbar=`<div class="toolbar">
     <div class="row"><button class="btn iconbtn" data-action="cal-prev" aria-label="Previous">‹</button><button class="btn sm" data-action="cal-today">Today</button><button class="btn iconbtn" data-action="cal-next" aria-label="Next">›</button></div>
     <div class="rangelabel">${esc(label)}</div>
-    <div class="seg" role="group" aria-label="View"><button data-action="cal-mode" data-mode="week" class="${V.calMode==='week'?'on':''}">Week by destination</button><button data-action="cal-mode" data-mode="month" class="${V.calMode==='month'?'on':''}">Month</button></div>
+    <div class="seg" role="group" aria-label="View"><button data-action="cal-mode" data-mode="list" class="${V.calMode==='list'?'on':''}">List</button><button data-action="cal-mode" data-mode="week" class="${V.calMode==='week'?'on':''}"><span class="wide-only">Week by destination</span><span class="narrow-only">Week</span></button><button data-action="cal-mode" data-mode="month" class="${V.calMode==='month'?'on':''}">Month</button></div>
     <span class="spacer"></span>
-    <button class="btn dark" data-action="new-oneoff">+ One-off post</button>
+    <button class="btn dark" data-action="new-oneoff">+ One-off<span class="wide-only"> post</span></button>
     <select class="compact" id="f-chan" data-ui="fChan" aria-label="Filter by destination"><option value="">All destinations</option>${channelOptions(V.fChan)}</select>
     <select class="compact" id="f-person" data-ui="fPerson" aria-label="Filter by person"><option value="">Everyone</option><option value="none" ${V.fPerson==='none'?'selected':''}>Unassigned</option>${memberOptions(V.fPerson,false)}</select>
   </div>
   <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> not approved</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> posted</div></div>`;
   if(!Object.keys(S.campaigns).length && !Object.keys(S.dests).length) return toolbar+`<div class="empty"><img src="/assets/mark-color.svg" alt=""><p><strong>Nothing scheduled yet.</strong></p><p>Create a campaign for an upcoming event, or add a one-off post that isn't part of a campaign.</p><div class="row" style="justify-content:center"><button class="btn primary" data-action="new-campaign">+ New campaign</button><button class="btn dark" data-action="new-oneoff">+ One-off post</button></div></div>`;
+  if(V.calMode==='list'){
+    let h=`<div class="agenda">`;
+    for(const d of days){ const k=ymd(d); const items=(byKey[k]||[]).sort(byWhen); const ev=evts[k]||[];
+      h+=`<section class="aday-l ${k===today?'today':''}" data-drop="${k}"><div class="ah"><span class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</span><span class="dd">${d.getDate()}</span><span class="dm">${d.toLocaleDateString('en-US',{month:'short'})}</span><span class="spacer"></span><button class="btn ghost sm" data-action="agenda-add" data-date="${k}" aria-label="Add on ${esc(fmtD(k))}">+ Add</button></div>
+        ${ev.map(evtBtn).join('')}
+        ${items.length?items.map(x=>{ const ch=channelById(x.channelId), c=campOf(x); return `<button class="arow ${isPending(x.campaignId)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(x.id)}">${kb(ch)}<span class="at"><strong>${esc(c.title)}</strong><span class="small muted">${esc(ch.name)}${timeTxt(x)}</span></span>${x.assigneeId?av(x.assigneeId):''}${pill(x.status)}</button>`; }).join(''):(ev.length?'':'<div class="small muted aempty">Nothing scheduled</div>')}
+      </section>`; }
+    return toolbar+h+`</div>`;
+  }
   if(V.calMode==='week'){
     const chans=s.channels.filter(c=>!V.fChan||c.id===V.fChan);
     let h=`<div class="wkwrap"><div class="wk"><div class="corner">Destination</div>`;
@@ -366,7 +389,7 @@ function campCard(c){
   const people=[...new Set(ds.map(d=>d.assigneeId).filter(Boolean))]; const chans=[...new Set(ds.map(d=>d.channelId))].map(channelById);
   return `<button class="ccard" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}">
     ${c.coverPath?`<div class="cover" style="background-image:url('${esc(fileUrl(c.coverPath))}')"></div>`:`<div class="stripe"></div>`}
-    <div class="body">${isPending(c.id)?'<span class="pill st-new" style="align-self:flex-start">Pending approval</span>':''}<h3>${esc(c.title||'Untitled campaign')}</h3><div class="sub">${esc(fmtRange(c,true))}${c.location?' · '+esc(c.location):''}</div>
+    <div class="body">${c._draft?'<span class="pill st-draft" style="align-self:flex-start">Draft · not submitted</span>':isPending(c.id)?'<span class="pill st-new" style="align-self:flex-start">Pending approval</span>':c.status==='declined'?'<span class="pill st-declined" style="align-self:flex-start">Declined</span>':''}<h3>${esc(c.title||'Untitled draft')}</h3><div class="sub">${esc(fmtRange(c,true))}${c.location?' · '+esc(c.location):''}</div>
     <div class="row">${chans.slice(0,8).map(ch=>kb(ch)).join('')}${chans.length?'':'<span class="muted small">No destinations yet</span>'}</div>
     <div class="row small"><span>${done} of ${ds.length} ready</span><span class="spacer"></span>${people.map(p=>av(p)).join('')}</div>
     <div class="progress" aria-hidden="true"><i style="width:${pct}%"></i></div></div></button>`;
@@ -397,8 +420,17 @@ function renderCampaign(id){
   if(!c) return `<div class="empty">This campaign was deleted or hasn't loaded yet. <a href="#campaigns">Back to campaigns</a></div>`;
   const ds=destsOf(id); const done=ds.filter(d=>DONE.has(d.status)).length; const files=c.files||[]; const I=esc(id);
   const inp=(f,label,type,ph,extra='')=>`<div class="field"><label class="lbl" for="c-${f}">${label}</label><input type="${type}" id="c-${f}" data-bind="camp:${f}" data-id="${I}" value="${esc(c[f]||'')}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra}></div>`;
-  const pr=requestFor(id);
-  const banner = pr ? `<div class="planbanner"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">Planning a request · not approved yet</span>
+  const pr=requestFor(id); const sub=memberById(c.createdBy);
+  const banner = c._draft ? `<div class="planbanner" style="border-left-color:var(--gold);background:color-mix(in srgb,var(--gold) 7%,var(--surface))"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">New campaign · not saved yet</span>
+      <div class="prose" style="font-size:14px">Fill in the details and add destinations, then submit it. ${isAdmin()?'As an admin, your campaign is approved as soon as you submit it.':'An admin reviews it, and assignment emails go out once it\'s approved.'}</div></div>
+      <button class="btn" data-action="discard-draft" data-id="${esc(id)}">Discard</button><button class="btn primary" data-action="submit-campaign" data-id="${esc(id)}" ${V.busy?'disabled':''}>${V.busy?'Submitting…':'Submit campaign'}</button></div>`
+    : (!pr && c.status==='pending') ? `<div class="planbanner"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">Waiting for approval</span>
+      <div class="prose" style="font-size:14px">Submitted by <strong>${esc(sub?sub.name:'a staff member')}</strong>. Assignment emails and automatic posting start once an admin approves it.</div></div>
+      ${isAdmin()?`<button class="btn sm" data-action="camp-decline" data-id="${esc(id)}">Decline</button><button class="btn primary" data-action="camp-approve" data-id="${esc(id)}">Approve</button>`:`<span class="pill st-new">Waiting for admin approval</span>`}</div>`
+    : c.status==='declined' ? `<div class="planbanner" style="border-left-color:var(--st-draft);background:var(--surface-2)"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">Not approved</span>
+      <div class="prose" style="font-size:14px">${c.reviewNote?`“${esc(c.reviewNote)}”`:'An admin declined this campaign.'} It's hidden from the calendar. Make changes, then submit it again.</div></div>
+      <button class="btn primary" data-action="resubmit-campaign" data-id="${esc(id)}">Submit again</button></div>`
+    : pr ? `<div class="planbanner"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">Planning a request · not approved yet</span>
       <div class="prose" style="font-size:14px">From <strong>${esc(pr.requester_name)}</strong>${pr.ministry?' ('+esc(pr.ministry)+')':''}. Drag the destinations onto the days they should go out, then ${isAdmin()?'approve':'an admin approves'}. ${esc(pr.requester_name.split(' ')[0])} gets an email listing every destination and date, and assignment emails go out to your team at the same time.</div></div>
       <a class="btn sm" href="#request-${esc(pr.id)}">View request</a>${isAdmin()?`<button class="btn sm" data-action="req-decline" data-id="${esc(pr.id)}">Decline</button><button class="btn primary" data-action="req-approve" data-id="${esc(pr.id)}">Approve &amp; email</button>`:`<span class="pill st-new">Waiting for admin approval</span>`}</div>` : '';
   return `<div class="row small" style="margin-bottom:12px"><a href="#campaigns">← All campaigns</a></div>${banner}
@@ -435,7 +467,7 @@ function renderCampaign(id){
 }
 function renderAdCal(c, ds){
   const id=c.id;
-  const head=`<div class="pagehead" style="margin-bottom:10px"><div><h2>Advertising calendar</h2><div class="sub">${c.adStart&&c.adEnd?`${esc(fmtD(c.adStart))} – ${esc(fmtD(c.adEnd))}. `:''}Drag a destination onto a day to schedule it, or drag one already placed to move it.</div></div></div>`;
+  const head=`<div class="pagehead" style="margin-bottom:10px"><div><h2>Advertising calendar</h2><div class="sub">${c.adStart&&c.adEnd?`${esc(fmtD(c.adStart))} – ${esc(fmtD(c.adEnd))}. `:''}<span class="hover-only">Drag a destination onto a day to schedule it, or drag one already placed to move it.</span><span class="touch-only">Tap + on a day to add a destination. To move one, tap it and change its date.</span></div></div></div>`;
   const a=parseYmd(c.adStart), b=parseYmd(c.adEnd);
   if(!a||!b) return `<section class="panel">${head}<div class="empty">Set <strong>Advertise from</strong> and <strong>Advertise until</strong> to see every day in your advertising window.</div></section>`;
   if(b<a) return `<section class="panel">${head}<div class="empty">"Advertise until" is before "Advertise from". Fix the dates to see the calendar.</div></section>`;
@@ -459,7 +491,7 @@ function renderWork(){
   const m=me(); let pid=V.workPerson || (m&&m.id) || '';
   let h=`<div class="pagehead"><div><h1>My work</h1><div class="sub">Sorted by due date: the day each item is scheduled to go out.</div></div><div class="row"><label class="small muted" for="w-person">Showing</label><select class="compact" id="w-person" data-ui="workPerson">${memberOptions(pid,false)}<option value="none" ${pid==='none'?'selected':''}>Unassigned</option></select></div></div>`;
   const when=d=>d.date||'';
-  const mine=Object.values(S.dests).filter(d=>pid==='none'?!d.assigneeId:d.assigneeId===pid).sort((a,b)=>(when(a)||'9999').localeCompare(when(b)||'9999')||byWhen(a,b));
+  const mine=Object.values(S.dests).filter(d=>!isDeclined(d.campaignId) && !(S.campaigns[d.campaignId]||{})._draft).filter(d=>pid==='none'?!d.assigneeId:d.assigneeId===pid).sort((a,b)=>(when(a)||'9999').localeCompare(when(b)||'9999')||byWhen(a,b));
   const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>d.status!=='posted'); const ok=d=>!d.publishError;
   const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>ok(d)&&when(d)&&when(d)<t)],['Due today',open.filter(d=>ok(d)&&when(d)===t)],['Next 7 days',open.filter(d=>ok(d)&&when(d)>t&&when(d)<=wk)],['Later',open.filter(d=>ok(d)&&(!when(d)||when(d)>wk))],['Posted recently',mine.filter(d=>d.status==='posted').reverse().slice(0,10)]];
   if(!mine.length) h+=`<div class="empty"><img src="/assets/mark-color.svg" alt="">Nothing assigned yet.</div>`;
@@ -468,6 +500,8 @@ function renderWork(){
 }
 
 /* ---------- requests inbox ---------- */
+// Staff-submitted campaigns waiting for an admin (request plans are approved through their request).
+const pendingCampaigns = () => Object.values(S.campaigns).filter(c=>c.status==='pending' && !c._draft && !requestFor(c.id)).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
 const REQ_ST = {new:['New','st-new'], approved:['Approved','st-approved'], declined:['Declined','st-declined']};
 function reqWhen(r){ return fmtRange({date:r.start_date||'', endDate:r.end_date||'', time:t5(r.start_time), endTime:t5(r.end_time)}, true); }
 function ago(ts){ const m=Math.round((Date.now()-new Date(ts))/60000); if(m<60) return `${Math.max(1,m)} min ago`; const h=Math.round(m/60); if(h<24) return `${h} hr ago`; const d=Math.round(h/24); return d<14?`${d} day${d===1?'':'s'} ago`:new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
@@ -478,8 +512,11 @@ function renderRequests(){
   const list=all.filter(r=>r.status===V.reqFilter);
   const sel=(V.requestId && S.requests[V.requestId]) || list[0];
   const formUrl=location.origin+'/request';
-  let h=`<div class="pagehead"><div><h1>Requests</h1><div class="sub">Communication requests from staff and ministry leaders. Share the form: <a href="/request" target="_blank" rel="noopener">${esc(formUrl)}</a></div></div>
+  const pc=pendingCampaigns();
+  const pcHtml = pc.length ? `<div class="sectionlabel">Campaigns waiting for approval · ${pc.length}</div><div class="dlist" style="margin-bottom:8px">${pc.map(c=>{ const sub=memberById(c.createdBy); const n=destsOf(c.id).length; return `<button class="drow" style="grid-template-columns:auto minmax(0,1fr) auto" data-action="open-campaign" data-id="${esc(c.id)}"><span class="sw" style="--c:${esc(c.color)};cursor:inherit"></span><div><div class="nm">${esc(c.title)}</div><div class="muted small">${esc(fmtRange(c))} · ${n} destination${n===1?'':'s'} · submitted by ${esc(sub?sub.name:'staff')}</div></div>${isAdmin()?'<span class="pill st-new">Review</span>':'<span class="pill st-new">Pending</span>'}</button>`; }).join('')}</div><div class="sectionlabel">Communication requests</div>` : '';
+  let h=`<div class="pagehead"><div><h1>Approvals</h1><div class="sub">Campaigns submitted by staff, and communication requests from the request form. Share the form: <a href="/request" target="_blank" rel="noopener">${esc(formUrl)}</a></div></div>
     <div class="row"><button class="btn sm" data-action="copy-form-link">Copy form link</button><div class="seg" role="group" aria-label="Show">${['new','approved','declined'].map(k=>`<button data-action="req-filter" data-f="${k}" class="${V.reqFilter===k?'on':''}">${REQ_ST[k][0]} · ${counts[k]||0}</button>`).join('')}</div></div></div>`;
+  h+=pcHtml;
   if(!list.length) return h+`<div class="empty"><img src="/assets/mark-color.svg" alt="">${V.reqFilter==='new'?'No new requests. When someone fills out the request form, it shows up here.':'Nothing here yet.'}</div>`;
   h+=`<div class="inbox"><div class="reqlist">${list.map(r=>`<button class="reqitem ${REQ_ST[r.status][1]} ${sel&&sel.id===r.id?'on':''}" data-action="open-request" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="small">${esc(r.requester_name)}${r.ministry?' · '+esc(r.ministry):''}</span><span class="small muted">${esc(fmtD(r.start_date))} · sent ${esc(ago(r.created_at))}</span></button>`).join('')}</div>`;
   if(sel && sel.status===V.reqFilter){
@@ -512,7 +549,7 @@ function createCampaignFromRequest(r, opts={}){
   const start=r.start_date||ymd(addDays(new Date(),21)); const adEnd=r.end_date&&r.end_date>start?r.end_date:start;
   const c={id:uid(), title:r.title, date:r.start_date||'', endDate:r.end_date||r.start_date||'', time:t5(r.start_time), endTime:t5(r.end_time), adStart:todayStr()<start?todayStr():start, adEnd,
     location:r.location||'', description:r.description||'', ministry:r.ministry||r.requester_name, link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'',
-    files:(r.files||[]).map(f=>({path:f.path, name:f.name, type:f.type, size:f.size, at:Date.now()}))};
+    files:(r.files||[]).map(f=>({path:f.path, name:f.name, type:f.type, size:f.size, at:Date.now()})), status:'pending'};
   saveCampaign(c);
   let def=parseYmd(start)?addDays(parseYmd(start),-3):new Date(); if(ymd(def)<todayStr()) def=new Date();
   for(const chId of (r.channel_ids||[])) if(settings().channels.some(x=>x.id===chId)) newDest(c.id, chId, ymd(def), defaultTime(chId), '', {silent:true});
@@ -535,6 +572,7 @@ async function approveRequest(m){
     await waitForSaves();
     const res=await api('request-decision',{id:r.id, decision:'approved', note:m.note, campaignId, notify:m.notify, includeSchedule:m.includeSchedule!==false});
     Object.assign(r,{status:'approved', decision_note:m.note, campaign_id:campaignId, reviewed_by:session.user.id, reviewed_at:new Date().toISOString()});
+    if(campaignId && S.campaigns[campaignId]) S.campaigns[campaignId].status='approved';
     const tasks = campaignId ? await notifyCampaignAssignments(campaignId) : 0;
     V.modal=null; V.busy=false;
     toast((m.notify?(res.emailed?`Approved. ${r.requester_name} was emailed.`:`Approved, but the email to ${r.requester_name} didn't send${res.emailError?': '+res.emailError:''}.`):'Approved.') + (tasks?` ${tasks} assignment email${tasks===1?'':'s'} sent.`:''));
@@ -720,6 +758,12 @@ function renderModal(){
       <label class="check"><input type="checkbox" id="ra-notify" ${m.notify?'checked':''}><span>Email ${esc(r.requester_name)} (${esc(r.requester_email)})</span></label>
       <div class="field"><label class="lbl" for="ra-note">Message to include <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="ra-note" rows="4" placeholder="${ap?'e.g. We\'ll have this in the Weekly Update on the 12th and on social media the week of the event.':'e.g. This falls outside our communication guidelines. Let\'s talk about other options.'}">${esc(m.note||'')}</textarea></div>
       <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn ${ap?'primary':'dark'}" data-action="${ap?'req-approve-go':'req-decline-go'}" ${V.busy?'disabled':''}>${V.busy?'Working…':ap?'Approve':'Decline'}</button></div>`, 600); }
+  if(m.type==='camp-review'){ const c=S.campaigns[m.id]; const sub=memberById(c.createdBy); const ds=destsOf(c.id);
+    return wrap(`<h2 id="m-t">${m.approve?'Approve':'Decline'} campaign</h2><p class="prose" style="margin:0">${esc(c.title)} · ${esc(fmtRange(c))}</p>
+      ${m.approve?`<div class="field"><span class="lbl">${ds.length} destination${ds.length===1?'':'s'}</span><div class="dlist">${ds.map(d=>{ const ch=channelById(d.channelId); return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">${kb(ch)}<strong style="flex:1">${esc(ch.name)}</strong><span class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${timeTxt(d)}</span>${d.assigneeId?av(d.assigneeId):''}</div>`; }).join('')||'<span class="muted small">No destinations yet.</span>'}</div><span class="small muted" style="margin-top:6px">Assigned people get their emails when you approve.</span></div>`:''}
+      ${sub&&sub.id!==(me()||{}).id?`<label class="check"><input type="checkbox" id="cr-notify" ${m.notify?'checked':''}><span>Email ${esc(sub.name)}</span></label>`:''}
+      <div class="field"><label class="lbl" for="cr-note">Message <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="cr-note" rows="3" placeholder="${m.approve?'e.g. Looks great!':'e.g. Let\'s move the Facebook post closer to the event.'}">${esc(m.note)}</textarea></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn ${m.approve?'primary':'dark'}" data-action="camp-review-go" ${V.busy?'disabled':''}>${V.busy?'Working…':m.approve?'Approve':'Decline'}</button></div>`, 600); }
   if(m.type==='pick-channel') return wrap(`<h2 id="m-t">Add a destination on ${esc(fmtD(m.date,{weekday:'long',month:'long',day:'numeric'}))}</h2>
       <div class="stack" style="gap:8px">${settings().channels.map(ch=>`<button class="pickrow" data-action="pick-channel" data-id="${esc(ch.id)}">${kb(ch)}<strong>${esc(ch.name)}</strong></button>`).join('')}</div>
       <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button></div>`);
@@ -764,10 +808,10 @@ function newDest(campaignId, channelId, date, time, assigneeId, opts={}){
   const d={id:uid(), campaignId:campaignId||'', title:opts.title||'', details:'', channelId, date:date||'', time:time||'', assigneeId:(assigneeId===undefined||assigneeId===''||assigneeId===null)?defaultOwner(channelId):(assigneeId||''), status:'draft', headline:'', copy:'', notes:'', imagePaths:[], autoPublish:false, publishedAt:'', externalUrl:'', publishError:''};
   saveDest(d); if(d.assigneeId && !silent) notifyAssigned(d.id); return d;
 }
+// New campaigns are unsaved drafts until someone clicks "Submit campaign", so blank campaigns are never stored.
 function newCampaign(){
-  const start=ymd(addDays(new Date(),21));
-  const c={id:uid(), title:'New campaign', date:start, endDate:start, time:'', endTime:'', adStart:todayStr(), adEnd:start, location:'', description:'', ministry:'', link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'', files:[]};
-  saveCampaign(c); return c;
+  const c={id:uid(), _draft:true, title:'', date:'', endDate:'', time:'', endTime:'', adStart:todayStr(), adEnd:'', location:'', description:'', ministry:'', link:'', color:PALETTE[Object.keys(S.campaigns).length % PALETTE.length], coverPath:'', files:[], status:'pending'};
+  S.campaigns[c.id]=c; return c;
 }
 function confirmBox(title, body, fn, yes){ V.modal={type:'confirm', title, body, fn, yes}; render(true); }
 async function copyText(text){ try{ await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }catch(e){ toast('Copy was blocked. Select the text and press Ctrl+C (⌘C on Mac).'); } }
@@ -788,7 +832,8 @@ const A = {
     toast(`Removed ${name}`, ()=>{ S.dests[copy.id]=copy; writeKey('d:'+copy.id); render(true); toast(`${name} restored`); }); },
   'toast-undo'(){ const fn=toastUndo; toastUndo=null; document.getElementById('toast').innerHTML=''; if(fn) fn(); },
   'req-filter'(el){ V.reqFilter=el.dataset.f; V.requestId=null; if(location.hash!=='#requests') history.replaceState(null,'','#requests'); render(true); },
-  'open-request'(el){ V.requestId=el.dataset.id; history.replaceState(null,'','#request-'+el.dataset.id); render(true); },
+  'open-request'(el){ V.requestId=el.dataset.id; history.replaceState(null,'','#request-'+el.dataset.id); render(true);
+    if(window.matchMedia('(max-width: 860px)').matches) setTimeout(()=>{ const p=document.querySelector('.inbox > .panel'); if(p) p.scrollIntoView({behavior:'smooth', block:'start'}); },30); },
   'copy-form-link'(){ copyText(location.origin+'/request'); },
   'req-approve'(el){ if(!isAdmin()){ toast('Only admins can approve requests.'); return; } V.modal={type:'req-approve', id:el.dataset.id, createCampaign:true, notify:true, includeSchedule:true, note:''}; render(true); },
   'req-decline'(el){ if(!isAdmin()){ toast('Only admins can decline requests.'); return; } V.modal={type:'req-decline', id:el.dataset.id, notify:true, note:''}; render(true); },
@@ -800,17 +845,50 @@ const A = {
   'auth-mode'(el){ V.authMode=el.dataset.mode; V.authErr=''; V.authMsg=''; render(true); },
   'sign-out'(){ flushAll(); sb.auth.signOut(); },
   'change-pw'(){ V.modal={type:'change-pw'}; render(true); },
+  async 'submit-campaign'(el){ const c=S.campaigns[el.dataset.id]; if(!c||!c._draft) return;
+    if(!c.title.trim()){ toast('Give the campaign a name first.'); const t=document.getElementById('c-title'); if(t) t.focus(); return; }
+    if(!c.date){ toast('Add a start date first.'); const t=document.getElementById('c-date'); if(t) t.focus(); return; }
+    V.busy=true; render(true);
+    delete c._draft; c.status = isAdmin() ? 'approved' : 'pending';
+    writeKey('c:'+c.id); await waitForSaves();
+    for(const d of destsOf(c.id)) writeKey('d:'+d.id);
+    await waitForSaves();
+    try{
+      if(c.status==='approved'){ const n=await notifyCampaignAssignments(c.id); toast(`Campaign created${n?`. ${n} assignment email${n===1?'':'s'} sent.`:'.'}`); }
+      else { const r=await api('campaign-action',{action:'submit', id:c.id}); toast(r.emailed===false?'Submitted for approval. (The email to admins didn\'t send.)':'Submitted. The admins have been emailed to approve it.'); }
+    }catch(e){ toast('Saved, but: '+e.message); }
+    V.busy=false; render(true); },
+  'discard-draft'(el){ const c=S.campaigns[el.dataset.id]; if(!c) return;
+    const go=()=>{ const paths=[c.coverPath, ...(c.files||[]).map(f=>f.path), ...destsOf(c.id).flatMap(d=>d.imagePaths||[])].filter(Boolean);
+      for(const d of destsOf(c.id)) delete S.dests[d.id]; delete S.campaigns[c.id];
+      if(paths.length) sb.storage.from('files').remove(paths).catch(()=>{});
+      location.hash='campaigns'; toast('Draft discarded'); };
+    if(!c.title && !c.date && !c.description && !destsOf(c.id).length && !(c.files||[]).length) return go();
+    confirmBox('Discard this draft?', 'It was never saved, so everything on this page will be lost.', go, 'Discard'); },
+  async 'resubmit-campaign'(el){ const c=S.campaigns[el.dataset.id]; if(!c) return;
+    try{ const r=await api('campaign-action',{action:'submit', id:c.id}); c.status='pending'; c.reviewNote=''; toast('Submitted again for approval.'); }catch(e){ toast(e.message); } render(true); },
+  'camp-approve'(el){ V.modal={type:'camp-review', id:el.dataset.id, approve:true, notify:true, note:''}; render(true); },
+  'camp-decline'(el){ V.modal={type:'camp-review', id:el.dataset.id, approve:false, notify:true, note:''}; render(true); },
+  async 'camp-review-go'(){ const m=V.modal; const c=S.campaigns[m.id]; if(!c) return;
+    m.note=(document.getElementById('cr-note')||{}).value||''; m.notify=!!(document.getElementById('cr-notify')||{}).checked; V.busy=true; render(true);
+    try{ const r=await api('campaign-action',{action:m.approve?'approve':'decline', id:c.id, note:m.note, notify:m.notify});
+      c.status=r.status; c.reviewNote=m.note; V.modal=null;
+      const n = m.approve ? await notifyCampaignAssignments(c.id) : 0;
+      toast((m.approve?'Approved.':'Declined.') + (r.emailed?' The submitter was emailed.':'') + (n?` ${n} assignment email${n===1?'':'s'} sent.`:''));
+    }catch(e){ toast(e.message); }
+    V.busy=false; render(true); },
   'new-campaign'(){ const c=newCampaign(); V.modal=null; location.hash='campaign-'+c.id; setTimeout(()=>{ const el=document.getElementById('c-title'); if(el){ el.focus(); el.select(); } },60); },
   'open-campaign'(el){ V.openDest=null; location.hash='campaign-'+el.dataset.id; },
   'open-dest'(el){ V.openDest=el.dataset.id; render(true); },
   'close-drawer'(){ V.openDest=null; render(true); },
-  'cal-prev'(){ V.anchor = V.calMode==='week'? addDays(V.anchor,-7) : new Date(V.anchor.getFullYear(), V.anchor.getMonth()-1, 1); render(true); },
-  'cal-next'(){ V.anchor = V.calMode==='week'? addDays(V.anchor,7) : new Date(V.anchor.getFullYear(), V.anchor.getMonth()+1, 1); render(true); },
+  'cal-prev'(){ V.anchor = V.calMode!=='month'? addDays(V.anchor,-7) : new Date(V.anchor.getFullYear(), V.anchor.getMonth()-1, 1); render(true); },
+  'cal-next'(){ V.anchor = V.calMode!=='month'? addDays(V.anchor,7) : new Date(V.anchor.getFullYear(), V.anchor.getMonth()+1, 1); render(true); },
   'cal-today'(){ V.anchor=new Date(); render(true); },
   'cal-mode'(el){ V.calMode=el.dataset.mode; ls('cc.calMode',V.calMode); render(true); },
-  'cal-goweek'(el){ V.anchor=parseYmd(el.dataset.date); V.calMode='week'; render(true); },
+  'cal-goweek'(el){ V.anchor=parseYmd(el.dataset.date); V.calMode=window.matchMedia('(max-width: 760px)').matches?'list':'week'; render(true); },
+  'agenda-add'(el){ V.modal={type:'pick-channel', date:el.dataset.date, then:'campaign'}; render(true); },
   'cell-add'(el){ V.modal={type:'pick-campaign', channelId:el.dataset.chan, date:el.dataset.date}; render(true); },
-  'new-oneoff'(){ const t=todayStr(); const days=V.calMode==='week'?[ymd(startOfWeek(V.anchor)), ymd(addDays(startOfWeek(V.anchor),6))]:[ymd(new Date(V.anchor.getFullYear(),V.anchor.getMonth(),1)), ymd(new Date(V.anchor.getFullYear(),V.anchor.getMonth()+1,0))];
+  'new-oneoff'(){ const t=todayStr(); const days=V.calMode!=='month'?[ymd(startOfWeek(V.anchor)), ymd(addDays(startOfWeek(V.anchor),6))]:[ymd(new Date(V.anchor.getFullYear(),V.anchor.getMonth(),1)), ymd(new Date(V.anchor.getFullYear(),V.anchor.getMonth()+1,0))];
     const date = t>=days[0]&&t<=days[1] ? t : (days[0]>t ? days[0] : t);
     const ch = settings().channels.find(c=>c.kind==='social') || settings().channels[0];
     const d=newDest(null, ch.id, date, defaultTime(ch.id), '', {title:'One-off post'}); V.modal=null; V.openDest=d.id; if(V.view!=='calendar') location.hash='calendar'; render(true);
@@ -819,7 +897,7 @@ const A = {
     setTimeout(()=>{ const el=document.getElementById('d-title-'+d.id); if(el){ el.focus(); el.select(); } },60); },
   'pick-campaign'(el){ const m=V.modal; const d=newDest(el.dataset.id, m.channelId, m.date, defaultTime(m.channelId), ''); V.modal=null; V.openDest=d.id; render(true); },
   'ad-add'(el){ V.modal={type:'pick-channel', campaignId:el.dataset.id, date:el.dataset.date}; render(true); },
-  'pick-channel'(el){ const m=V.modal; const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
+  'pick-channel'(el){ const m=V.modal; if(m.then==='campaign'){ V.modal={type:'pick-campaign', channelId:el.dataset.id, date:m.date}; render(true); return; } const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
   'add-dests'(el){ openAddDests(el.dataset.id); },
   'modal-close'(){ V.modal=null; render(true); },
   'modal-bg'(el,e){ if(e.target===el){ V.modal=null; render(true); } },

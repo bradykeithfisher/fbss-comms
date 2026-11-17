@@ -7,10 +7,11 @@ export default async (req) => {
   if (!user) return fail('Please sign in again.', 401);
   const { id } = await req.json().catch(() => ({}));
   if (!id) return fail('Missing destination.');
-  const rows = await db(`destinations?id=eq.${encodeURIComponent(id)}&select=*,campaigns(id,title,start_date,end_date,location)`);
+  const rows = await db(`destinations?id=eq.${encodeURIComponent(id)}&select=*,campaigns(id,title,start_date,end_date,location,status)`);
   const d = rows[0];
   if (!d || !d.assignee_id) return json({ skipped: 'unassigned' });
   if (d.assigned_notified === d.assignee_id) return json({ skipped: 'already emailed' });
+  if (d.campaigns && d.campaigns.status && d.campaigns.status !== 'approved') return json({ skipped: 'campaign not approved yet' });
   if (d.assignee_id === user.id) {  // assigning yourself: no email needed
     await db(`destinations?id=eq.${d.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { assigned_notified: d.assignee_id } });
     return json({ skipped: 'self' });

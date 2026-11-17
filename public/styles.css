@@ -346,3 +346,121 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .preview .pimg.reel{aspect-ratio:9/16;max-height:420px}
 .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--rust);animation:spin .9s linear infinite;flex:none}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* =====================================================================
+   Phones and small tablets
+   ===================================================================== */
+.ti{display:none;width:22px;height:22px;flex:none}
+.narrow-only,.touch-only{display:none}
+.topbar{padding-top:max(12px,env(safe-area-inset-top))}
+
+/* List (agenda) view of the calendar */
+.agenda{display:flex;flex-direction:column;gap:10px}
+.aday-l{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.aday-l.today{border-left:4px solid var(--gold)}
+.aday-l .ah{display:flex;align-items:baseline;gap:8px}
+.aday-l .dn{font:500 12px var(--f-ui);text-transform:uppercase;letter-spacing:.14em;color:var(--muted);width:34px}
+.aday-l .dd{font:400 24px var(--f-title);color:var(--slate);font-variant-numeric:tabular-nums}
+.aday-l.today .dd{color:var(--rust)}
+.aday-l .dm{font:500 12px var(--f-ui);text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.aday-l .evt{width:auto;align-self:flex-start;padding:5px 9px;font-size:13px}
+.arow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);border-left:4px solid var(--c);background:var(--surface);border-radius:4px;padding:9px 10px;cursor:pointer;font:inherit;min-height:52px}
+.arow:hover{border-color:var(--gold);border-left-color:var(--c)}
+.arow.pending{border-left-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 7%,var(--surface)) 0 6px,var(--surface) 6px 12px)}
+.arow .at{flex:1;min-width:0;display:flex;flex-direction:column}
+.arow .at strong{font-weight:500;color:var(--slate);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aempty{padding:2px 0 4px 42px}
+
+@media (hover:none){ .hover-only{display:none} .touch-only{display:inline} .adadd{opacity:1;font-size:20px;padding:0 6px} .chipx{font-size:18px;padding:0 5px} }
+
+@media (max-width: 760px){
+  body{font-size:15px}
+  /* no zoom-in when tapping a field on iPhone */
+  input[type=text],input[type=email],input[type=password],input[type=date],input[type=time],input[type=url],input[type=number],select,textarea{font-size:16px}
+  .wide-only{display:none}
+  .narrow-only{display:inline}
+
+  /* header + bottom tab bar */
+  .topbar{gap:10px;padding:max(8px,env(safe-area-inset-top)) 14px 8px}
+  .topbar .logo{height:40px}
+  .topbar > a{flex:1}
+  .newbtn{width:40px;height:40px;padding:0;font-size:22px;letter-spacing:0;border-radius:50%}
+  .usermenu .nm{display:none}
+  .usermenu .btn{padding:4px 6px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--cream);border-top:1px solid var(--line-2);display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:4px 2px max(6px,env(safe-area-inset-bottom));box-shadow:0 -4px 18px rgba(46,52,60,.08)}
+  .tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 2px;font-size:10px;letter-spacing:.06em;border-bottom:0;position:relative;min-height:50px;justify-content:center}
+  .tabs a.on{border-bottom:0;color:var(--rust)}
+  .tabs .ti{display:block}
+  .tabs a .count{position:absolute;top:2px;left:calc(50% + 6px);margin:0;min-width:17px;height:17px;font-size:10px}
+  main{padding:16px 14px calc(90px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+
+  .pagehead h1{font-size:23px}
+  .pagehead h2{font-size:19px}
+  .panel{padding:16px}
+
+  /* calendar */
+  .toolbar{gap:8px}
+  .rangelabel{font-size:18px;min-width:0;flex:1 1 100%;order:-1}
+  .toolbar .spacer{display:none}
+  .toolbar select.compact{flex:1 1 45%}
+  .toolbar .seg{flex:1 1 auto}
+  .toolbar .seg button{flex:1;padding:8px 6px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat{padding:6px 10px;font-size:10.5px}
+  .stat b{font-size:19px}
+  .mo .day{min-height:64px}
+  .mo .dow{padding:6px 2px;text-align:center;letter-spacing:.06em}
+
+  /* campaigns */
+  .cards{grid-template-columns:1fr}
+  .titleinput{font-size:19px!important}
+  .adcal .dow{padding:5px 2px;text-align:center;font-size:10px;letter-spacing:.04em}
+  .adcal .aday{min-height:64px}
+  .adcal .anum .mon{display:none}
+  .adcal .evtag{font-size:0;padding:2px 4px}
+  .adcal .evtag::before{content:"★";font-size:10px}
+  .palette{display:none}
+  .footbar{gap:8px}
+
+  /* drawer & modals */
+  .drawer{width:100%}
+  .dhead{padding:max(12px,env(safe-area-inset-top)) 14px 12px}
+  .dbody{padding:16px 14px calc(24px + env(safe-area-inset-bottom));gap:18px}
+  .modalwrap{padding:0;place-items:end stretch}
+  .modal{width:100%!important;max-height:92%;border-radius:12px 12px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom))}
+  .mrow{grid-template-columns:auto 1fr 1fr}
+  .mrow .ctl{grid-column:auto}
+  .mrow label{grid-column:2 / span 2}
+  .mrow input[type=date].ctl{grid-column:2}
+  .mrow select.ctl{grid-column:2 / span 2}
+  .preview{max-width:100%}
+  .icongrid{grid-template-columns:repeat(auto-fill,minmax(58px,1fr))}
+
+  /* settings */
+  .setgrid{grid-template-columns:1fr}
+  .setrow{grid-template-columns:auto minmax(0,1fr) auto}
+  .setrow select{grid-column:2 / span 2}
+  .ownerrow{padding-left:0}
+  .teamrow{grid-template-columns:auto minmax(0,1fr) auto}
+  .teamrow select{grid-column:2}
+
+  /* requests */
+  .inbox .panel .row h2{font-size:20px!important}
+  .seg button{padding:8px 9px}
+}
+@media (max-width: 480px){
+  .grid2{grid-template-columns:1fr}
+  .drawer .grid2{grid-template-columns:1fr 1fr}
+  .drawer .postbox .grid2{grid-template-columns:1fr}
+  .btn{padding:9px 12px}
+  .authcard{padding:30px 22px 24px}
+}
+/* inputs never overflow their columns */
+.setgrid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}
+.cards{grid-template-columns:repeat(auto-fill,minmax(min(310px,100%),1fr))}
+@media (max-width: 760px){
+  .adcal .chip{justify-content:center;padding:4px 2px;gap:0;border-left-width:2px}
+  .adcal .chip .av,.adcal .chip .sdot,.adcal .chip .chipx{display:none}
+  .adcal .chip .kb{width:22px;height:22px}
+}

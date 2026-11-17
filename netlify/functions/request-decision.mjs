@@ -1,6 +1,6 @@
 // Staff: approve or decline a request and email the person who sent it.
 import { json, fail, requireUser, db } from '../lib/shared.mjs';
-import { layout, sendEmail, fmtRange, fmtDate, fmtTime, esc } from '../lib/email.mjs';
+import { layout, sendEmail, fmtRange, esc, scheduleHtml } from '../lib/email.mjs';
 export default async (req) => {
   if (req.method !== 'POST') return fail('Use POST', 405);
   const user = await requireUser(req);
@@ -14,28 +14,13 @@ export default async (req) => {
   await db(`requests?id=eq.${r.id}`, { method: 'PATCH', prefer: 'return=minimal', body: {
     status: decision, decision_note: msg, reviewed_by: user.id, reviewed_at: new Date().toISOString(), ...(campaignId ? { campaign_id: campaignId } : {}),
   } });
-  if (!notify) return json({ ok: true, emailed: false });
   const by = user.profile?.full_name || 'The FBSS communications team';
   const approved = decision === 'approved';
-  // The planned schedule: every destination on the linked campaign, in date order.
-  let schedule = '';
   const cid = campaignId || r.campaign_id;
-  if (approved && includeSchedule && cid) {
-    const ds = await db(`destinations?campaign_id=eq.${encodeURIComponent(cid)}&select=channel_id,publish_date,publish_time&order=publish_date.asc.nullslast,publish_time.asc.nullslast`);
-    const s = await db('app_settings?id=eq.1&select=data');
-    const chans = (s[0]?.data?.channels) || [];
-    if (ds.length) {
-      schedule = `<p style="margin:18px 0 8px;font:600 11px Arial,sans-serif;letter-spacing:1.5px;text-transform:uppercase;color:#686E75">Where and when it goes out</p>
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #DED6C5">${ds.map((d) => {
-          const ch = chans.find((c) => c.id === d.channel_id) || { name: d.channel_id };
-          const name = ch.name;
-          const timed = ['social', 'facebook', 'instagram'].includes(ch.kind);  // only social posts have a time
-          return `<tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid #DED6C5;font:600 15px Georgia,serif;color:#414A55">${esc(name)}</td>
-            <td style="padding:9px 0;border-bottom:1px solid #DED6C5;font:15px Georgia,serif;color:#2E343C;text-align:right">${d.publish_date ? esc(fmtDate(d.publish_date)) + (timed && d.publish_time ? `<br><span style="color:#686E75;font-size:13px">${esc(fmtTime(d.publish_time))}</span>` : '') : 'Date to be set'}</td></tr>`;
-        }).join('')}</table>
-        <p style="margin:8px 0 0;font:13px Georgia,serif;color:#686E75">Dates can shift a little as we finalize the schedule.</p>`;
-    }
-  }
+  // The planned campaign follows the request: approved with it, or marked declined.
+  if (cid) await db(`campaigns?id=eq.${encodeURIComponent(cid)}`, { method: 'PATCH', prefer: 'return=minimal', body: { status: approved ? 'approved' : 'declined', reviewed_by: user.id, reviewed_at: new Date().toISOString() } });
+  const schedule = approved && includeSchedule && cid ? await scheduleHtml(db, cid) : '';
+  if (!notify) return json({ ok: true, emailed: false });
   try {
     const result = await sendEmail({
       to: r.requester_email, replyTo: user.email,

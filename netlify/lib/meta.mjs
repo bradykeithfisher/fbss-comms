@@ -43,6 +43,7 @@ export async function advanceDestination(id, deadline = Date.now() + 7000) {
   const platforms = kind === 'social' ? ['facebook', 'instagram'] : (kind === 'facebook' || kind === 'instagram') ? [kind] : [];
   if (!platforms.length) throw new Error('Only Facebook, Instagram and Social destinations can post automatically.');
   if (d.published_at) throw new Error('This was already posted.');
+  if (d.campaign_id && camp.status && camp.status !== 'approved') throw new Error('This campaign has not been approved yet, so it can\'t be posted.');
   const acct = await getAccount();
   if (!acct) throw new Error('Facebook and Instagram are not connected yet. An admin can connect them in Settings.');
   const token = acct.page_token;

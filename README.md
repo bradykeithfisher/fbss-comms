@@ -134,6 +134,23 @@ Each destination has an **Assigned to** person. **It's due on the day it's sched
 - Request plans that aren't approved yet don't send assignment emails. They all go out the moment you approve, so nobody gets tasks for a request you might decline.
 - Changing an auto-assign setting only affects destinations created afterward. Existing assignments stay as they are.
 
+## New campaigns and approval
+
+- **+ New campaign** opens an unsaved draft. Nothing is saved until you click **Submit campaign**, so empty campaigns never pile up.
+  - Fill in the details, upload files, and add or drag in destinations first.
+  - **Discard** throws the draft away.
+  - The browser warns you if you try to leave the site with an unsaved draft. Drafts only exist on that computer until they're submitted.
+  - A campaign needs a name and a start date before it can be submitted.
+- **When an editor submits**, the campaign is **Pending approval**:
+  - It shows striped on the calendars.
+  - The admins get an email.
+  - It appears at the top of the **Approvals** tab.
+  - No assignment emails, due-day reminders or automatic Facebook/Instagram posts happen until it's approved. The server enforces this.
+- **When an admin submits**, the campaign is approved right away.
+- **Approve or Decline** from the campaign page banner (admins only). You can add a message. The person who submitted it is emailed, with the schedule if it's approved, and assignment emails go out to the team.
+  - A declined campaign is hidden from the calendar and My work. The submitter can change it and click **Submit again**.
+- Communication requests work the same way. A planned request's campaign is pending until the request is approved.
+
 ## Dates and times
 
 Only **Facebook, Instagram and Social** destinations have a time, because that's when they post automatically (9:00 AM unless you change it). Every other destination (email, slides, bulletin, announcements, text, website) is date-only, and emails to staff and requesters show just the date for those.
@@ -155,7 +172,7 @@ Staff and ministry leaders request communications at **https://comms.fbss.church
   - a communication description
   - which destinations they want (or "Not sure")
   - any files: posters, photos, PDFs, up to 15 files of 50 MB each
-- New requests appear under the **Requests** tab with a count badge, and admins get an email (or the addresses in `REQUEST_NOTIFY_EMAILS`).
+- New requests appear under the **Approvals** tab with a count badge, and admins get an email (or the addresses in `REQUEST_NOTIFY_EMAILS`).
 - **Plan on calendar** creates a campaign from the request (event details, files and requested destinations) and opens its advertising calendar. Drag each destination to the day it should go out.
   - Until you approve, the campaign shows as **Pending approval**, with striped chips on the calendars, and a banner at the top of the page.
 - **Approve & email** (on the banner or the request) shows the schedule. It then emails the requester a list of every destination with its date and time, plus your message if you add one.
@@ -192,6 +209,17 @@ Facebook, Instagram and Social destinations can post a **video** instead of phot
 ## 10. Destination icons
 
 In **Settings → Destinations**, click any destination's icon to choose a new one. You can search thousands of free icons from **Lucide**, plus brand logos (YouTube, TikTok, Spotify and more) from **Simple Icons**. Icons load from the free Iconify service (api.iconify.design). If it's ever unreachable, the two-letter labels show instead.
+
+## Using it on a phone
+
+The app works on phones and tablets:
+- **Navigation:** a bottom tab bar (Calendar, Campaigns, My work, Requests, Settings) and a round **+** button for a new campaign.
+- **Calendar:** opens in a **List** view, one day at a time with everything going out that day. Week and Month are still there.
+- **Adding:** tap **+ Add** on a day, pick the destination, then pick the campaign or **One-off post**.
+- **Advertising calendar:** tap **+** on a day to add a destination. To move one, tap it and change its date. Dragging is for computers.
+- **Add it to your home screen** so it opens like an app, with the FBSS icon:
+  - iPhone: in Safari, tap **Share → Add to Home Screen**.
+  - Android: in Chrome, tap **⋮ → Add to Home screen**.
 
 ## 11. Invite your team
 

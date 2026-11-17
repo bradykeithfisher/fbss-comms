@@ -11,7 +11,8 @@ export default async () => {
   const tz = churchTz();
   const pending = await db('destinations?publish_pending=is.true&published_at=is.null&publish_error=eq.&select=id');
   const tomorrow = new Date(Date.now() + 36 * 3600 * 1000).toISOString().slice(0, 10);
-  const due = (await db(`destinations?auto_publish=is.true&publish_pending=is.false&published_at=is.null&publish_error=eq.&status=in.(approved,scheduled)&publish_date=lte.${tomorrow}&select=id,publish_date,publish_time`))
+  const due = (await db(`destinations?auto_publish=is.true&publish_pending=is.false&published_at=is.null&publish_error=eq.&status=in.(approved,scheduled)&publish_date=lte.${tomorrow}&select=id,publish_date,publish_time,campaign_id,campaigns(status)`))
+    .filter((d) => !d.campaign_id || !d.campaigns || d.campaigns.status === 'approved')
     .filter((d) => d.publish_date && zonedToUtc(d.publish_date, (d.publish_time || '09:00').slice(0, 5), tz).getTime() <= Date.now());
   let posted = 0, processing = 0, failed = 0, skipped = 0;
   for (const d of [...pending, ...due]) {
