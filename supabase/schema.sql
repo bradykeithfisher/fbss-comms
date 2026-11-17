@@ -271,3 +271,31 @@ create trigger campaigns_guard_status before insert or update on public.campaign
 -- =====================================================================
 alter table public.requests add column if not exists promo_start date;
 alter table public.requests add column if not exists needs_graphics text not null default '';
+
+-- =====================================================================
+-- Update 9: AI graphics. One row per graphic being made for a campaign.
+-- The Supabase Edge Function "graphics" creates the artwork; the app adds the text and saves the files.
+-- =====================================================================
+create table if not exists public.graphics_jobs (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  kind text not null check (kind in ('poster','wide','social')),
+  options jsonb not null default '{}'::jsonb,
+  status text not null default 'queued' check (status in ('queued','working','art','composing','done','failed')),
+  art_path text not null default '',
+  outputs jsonb not null default '[]'::jsonb,
+  error text not null default '',
+  created_by uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists graphics_jobs_campaign on public.graphics_jobs(campaign_id);
+alter table public.graphics_jobs enable row level security;
+drop policy if exists "staff read graphics" on public.graphics_jobs;
+create policy "staff read graphics" on public.graphics_jobs for select to authenticated using (true);
+drop policy if exists "staff add graphics" on public.graphics_jobs;
+create policy "staff add graphics" on public.graphics_jobs for insert to authenticated with check (status = 'queued');
+drop policy if exists "staff update graphics" on public.graphics_jobs;
+create policy "staff update graphics" on public.graphics_jobs for update to authenticated using (true) with check (true);
+drop policy if exists "staff delete graphics" on public.graphics_jobs;
+create policy "staff delete graphics" on public.graphics_jobs for delete to authenticated using (true);

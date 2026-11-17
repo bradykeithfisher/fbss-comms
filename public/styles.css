@@ -472,3 +472,9 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
   .adcal .chip .kb{width:22px;height:22px}
 }
 .st-done{--st:var(--st-approved)}
+/* AI graphics */
+.gjobs{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.gjob{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:3px;padding:8px 10px;background:var(--surface)}
+.gjob.ok{border-left-color:var(--moss)}
+.gjob .gj-t{font-weight:500;font-size:14px;color:var(--slate)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line-2);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;vertical-align:-1px;margin-right:4px}

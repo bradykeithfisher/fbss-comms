@@ -286,3 +286,23 @@ In the studio, each item becomes an announcement section tagged "From the calend
 - the copy, first photo and campaign link are added
 
 Sections nobody edits stay in step with the calendar. Once someone edits one in the studio, the calendar leaves it alone. No database changes are needed.
+
+## AI graphics
+Each campaign has a **✦ Design graphics** button (under Campaign files). It makes any of:
+- a 36 × 42 inch poster (print-ready PDF)
+- a 16 × 9 title graphic and a 16 × 9 background graphic
+- 4 × 5 social posts (as many as you like; **+ Another social post** adds one more)
+
+OpenAI creates text-free artwork from the campaign's title, description and the style you pick. The app then adds the
+date, time, place, title and FBSS logo in the brand fonts, so names and dates are always spelled right, and saves the
+finished files to the campaign. You can leave the page while the artwork is being made; it finishes the next time
+anyone opens the campaign.
+
+**Setup (one time):**
+1. Create an API key at platform.openai.com (API keys) and add a little credit (each image costs a few cents; the poster a bit more).
+2. In Supabase: **Edge Functions → Secrets**, add `OPENAI_API_KEY` with that key. Optional: `OPENAI_IMAGE_MODEL` (default `gpt-image-2`)
+   and `OPENAI_IMAGE_QUALITY` (`low`, `medium` or `high`; default `medium`).
+3. The Edge Function lives in `supabase/functions/graphics`. It's already deployed; to redeploy after changing it,
+   use the Supabase CLI: `supabase functions deploy graphics --no-verify-jwt`.
+
+Brand fonts are in `public/assets/fonts` (SIL Open Font License); the PDF maker is jsPDF (MIT) in `public/vendor`.
