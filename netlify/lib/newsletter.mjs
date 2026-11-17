@@ -23,8 +23,8 @@ export function eyebrow(c) {
   return [date, time, c.location].filter(Boolean).join(' · ');
 }
 
-// Every Weekly Update (email-type) destination from 2 days ago through the next 7 days,
-// from approved campaigns and one-off posts, as newsletter sections.
+// Every Weekly Update (email-type) destination from 2 days ago through the next 7 days, from approved
+// campaigns and one-off posts. The studio keeps one section per campaign (group) and skips what already went out.
 export async function buildItems() {
   const today = todayIn(churchTz());
   const from = addDays(today, -2), to = addDays(today, 7);
@@ -43,6 +43,8 @@ export async function buildItems() {
       const link = (c && c.link) || '';
       return {
         calId: d.id,
+        group: d.campaign_id ? 'camp-' + d.campaign_id : d.id,   // one newsletter section per campaign
+        date: d.publish_date,
         eyebrow: eyebrow(c),
         title: d.headline || (c && c.title) || d.title || '',
         body: d.copy || d.details || (c && c.description) || '',
