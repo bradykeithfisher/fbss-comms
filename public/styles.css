@@ -337,3 +337,12 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .chanset{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}
 .ownerrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:44px}
 .ownerrow select.compact{min-width:150px}
+
+/* ---------- video ---------- */
+.photo video,.thumbs video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
+.thumbs video{width:38px;height:38px;border-radius:3px;border:1px solid var(--line)}
+.photo.vid::after{content:"▶";position:absolute;left:6px;bottom:5px;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.7);pointer-events:none}
+.preview .pimg video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
+.preview .pimg.reel{aspect-ratio:9/16;max-height:420px}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--rust);animation:spin .9s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}

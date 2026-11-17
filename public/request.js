@@ -9,7 +9,7 @@ const kb = ch => `<span class="kb" style="--k:${KIND_COLOR[ch.kind]||KIND_COLOR.
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});
 const size = b => b>1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB';
 const root = document.getElementById('req');
-let sb=null, channels=[], files=[], busy=false;
+let sb=null, channels=[], files=[], busy=false, maxMb=50;
 
 function toast(msg){ const t=document.getElementById('toast'); t.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`; setTimeout(()=>{ t.innerHTML=''; },4000); }
 
@@ -18,7 +18,7 @@ async function boot(){
     const [cfg, form] = await Promise.all([fetch('/api/config').then(r=>r.json()), fetch('/api/request-form').then(r=>r.json())]);
     if(cfg.error) throw new Error(cfg.error);
     sb = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth:{ persistSession:false, autoRefreshToken:false } });
-    channels = form.channels || [];
+    channels = form.channels || []; maxMb = cfg.maxUploadMb || 50;
   }catch(e){ root.innerHTML=`<div class="reqwrap"><div class="reqcard"><p class="err">The request form is unavailable right now. Please try again later.</p></div></div>`; return; }
   render();
 }
@@ -49,7 +49,7 @@ function render(){
         <label><input type="checkbox" id="r-notsure"><span class="kb" style="--k:#7D7468"><img src="${esc(iconUrl('lucide:circle-help'))}" alt="" onerror="this.remove()"><b>?</b></span><span>Not sure. Let the team decide</span></label></div></div>
     </fieldset>
     <fieldset><legend>Files <span class="opt" style="font-family:var(--f-ui)">optional</span></legend>
-      <label class="drop" id="drop" for="r-files"><strong>Drag files here</strong> or click to choose<br><span class="small">Posters, logos, photos, PDFs · up to 15 files, 50 MB each</span></label>
+      <label class="drop" id="drop" for="r-files"><strong>Drag files here</strong> or click to choose<br><span class="small">Posters, logos, photos, videos, PDFs · up to 15 files, ${maxMb} MB each</span></label>
       <input type="file" id="r-files" class="sr" multiple>
       <div class="flist" id="flist"></div>
     </fieldset>
@@ -67,7 +67,7 @@ function drawFiles(){
 function addFiles(list){
   for(const f of list){
     if(files.length>=15){ toast('Up to 15 files, please.'); break; }
-    if(f.size>50*1024*1024){ toast(`${f.name} is over 50 MB.`); continue; }
+    if(f.size>maxMb*1024*1024){ toast(`${f.name} is over ${maxMb} MB.`); continue; }
     files.push({file:f, status:'ready'});
   }
   drawFiles();

@@ -74,6 +74,10 @@ function fmtRange(c,long){ const o=long?{weekday:'long',month:'long',day:'numeri
   if(!c.endDate || c.endDate<=c.date) return fmtD(c.date,o)+(t1?' · '+t1+(t2?' – '+t2:''):'');
   return `${fmtD(c.date,o)}${t1?', '+t1:''} – ${fmtD(c.endDate,o)}${t2?', '+t2:''}`; }
 const fileKind = f => (f.type||'').startsWith('image/') ? 'image' : (f.type==='application/pdf' ? 'PDF' : (f.type||'').startsWith('video/') ? 'VIDEO' : ((f.name||'').split('.').pop()||'FILE').toUpperCase().slice(0,4));
+const isVideo = p => /\.(mp4|mov|m4v)$/i.test(p||'');
+const maxMb = () => (CFG && CFG.maxUploadMb) || 50;
+// A small preview for a photo or a video path.
+const mediaTag = (path, cls='') => isVideo(path) ? `<video class="${cls}" src="${esc(fileUrl(path))}#t=0.5" muted playsinline preload="metadata"></video>` : `<img class="${cls}" src="${esc(fileUrl(path))}" alt="">`;
 const safeName = n => String(n||'file').normalize('NFKD').replace(/[^\w.\-]+/g,'-').replace(/-+/g,'-').slice(-80);
 
 /* ---------- state ---------- */
@@ -104,7 +108,7 @@ const campToRow = c => ({ id:c.id, title:c.title||'Untitled campaign', start_dat
   location:c.location||'', description:c.description||'', ministry:c.ministry||'', link:c.link||'', color:c.color||PALETTE[0], cover_path:c.coverPath||'', files:c.files||[] });
 const rowToDest = r => ({ id:r.id, campaignId:r.campaign_id||'', title:r.title||'', details:r.details||'', channelId:r.channel_id, date:r.publish_date||'', time:t5(r.publish_time), assigneeId:r.assignee_id||'', status:r.status||'draft',
   headline:r.headline||'', copy:r.copy||'', notes:r.notes||'', imagePaths:Array.isArray(r.image_paths)?r.image_paths:[], autoPublish:!!r.auto_publish,
-  publishedAt:r.published_at||'', externalUrl:r.external_url||'', publishError:r.publish_error||'', publishedParts:r.published_parts||{} });
+  publishedAt:r.published_at||'', externalUrl:r.external_url||'', publishError:r.publish_error||'', publishedParts:r.published_parts||{}, publishPending:!!r.publish_pending });
 const destToRow = d => ({ id:d.id, campaign_id:d.campaignId||null, title:d.title||'', details:d.details||'', channel_id:d.channelId, publish_date:d.date||null, publish_time:d.time||null, assignee_id:d.assigneeId||null, status:d.status||'draft',
   headline:d.headline||'', copy:d.copy||'', notes:d.notes||'', image_paths:d.imagePaths||[], auto_publish:!!d.autoPublish, due_date:d.date||null });  // due date is always the scheduled date
 const rowToMember = r => ({ id:r.id, name:r.full_name || (r.email||'').split('@')[0] || 'Staff member', email:r.email||'', color:r.color||'#5F7478', role:r.role||'editor' });
@@ -212,7 +216,7 @@ function subscribe(){
     .on('postgres_changes',{event:'*',schema:'public',table:'destinations'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id);
       if(p.eventType==='DELETE'){ delete S.dests[id]; render(); return; }
       const incoming=rowToDest(p.new);
-      if(dirty['d:'+id] && S.dests[id]){ const l=S.dests[id]; l.publishedAt=incoming.publishedAt; l.externalUrl=incoming.externalUrl; l.publishError=incoming.publishError; l.publishedParts=incoming.publishedParts; if(incoming.status==='posted') l.status='posted'; }
+      if(dirty['d:'+id] && S.dests[id]){ const l=S.dests[id]; l.publishedAt=incoming.publishedAt; l.externalUrl=incoming.externalUrl; l.publishError=incoming.publishError; l.publishedParts=incoming.publishedParts; l.publishPending=incoming.publishPending; if(incoming.status==='posted') l.status='posted'; }
       else S.dests[id]=incoming;
       render(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'}, p=>{ if(dirty['s:1']) return; if(p.new) applySettings(p.new.data); render(); })
@@ -310,7 +314,7 @@ function kb(ch, cls=''){ const k=kindOf(ch); return `<span class="kb ${cls}" sty
 function av(memberId, cls=''){ const m=memberById(memberId); if(!m) return `<span class="av none ${cls}" title="Unassigned">?</span>`; return `<span class="av ${cls}" style="--m:${esc(m.color)}" title="${esc(m.name)}">${esc(initials(m.name))}</span>`; }
 function pill(st){ const s=STATUSES.find(x=>x[0]===st)||STATUSES[0]; return `<span class="pill st-${s[0]}">${s[1]}</span>`; }
 function chip(d,label,removable){ const c=campOf(d), ch=channelById(d.channelId); const s=d.status||'draft';
-  return `<div class="chip ${isPending(d.campaignId)?'pending':''}" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${isPending(d.campaignId)?'Pending approval · ':''}${esc(c.title)} · ${esc(ch.name)}${d.time?' · '+fmtT(d.time):''} · ${esc((STATUSES.find(x=>x[0]===s)||STATUSES[0])[1])}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${s}"></span>${d.assigneeId?av(d.assigneeId):''}${removable?`<button class="chipx" data-action="quick-delete" data-id="${esc(d.id)}" aria-label="Remove ${esc(ch.name)}" title="Remove">×</button>`:''}</div>`; }
+  return `<div class="chip ${isPending(d.campaignId)?'pending':''}" role="button" tabindex="0" draggable="true" data-drag-dest="${esc(d.id)}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(d.id)}" title="${isPending(d.campaignId)?'Pending approval · ':''}${esc(c.title)} · ${esc(ch.name)}${timeTxt(d)} · ${esc((STATUSES.find(x=>x[0]===s)||STATUSES[0])[1])}${d.autoPublish&&!d.publishedAt?' · posts automatically':''} · drag to move">${kb(ch)}<span class="t">${esc(label||c.title)}</span>${d.publishError?'<span title="Posting failed" style="color:var(--bad)">!</span>':''}<span class="sdot st-${s}"></span>${d.assigneeId?av(d.assigneeId):''}${removable?`<button class="chipx" data-action="quick-delete" data-id="${esc(d.id)}" aria-label="Remove ${esc(ch.name)}" title="Remove">×</button>`:''}</div>`; }
 function evtBtn(c){ return `<button class="evt ${isPending(c.id)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-campaign" data-id="${esc(c.id)}" title="Event: ${esc(c.title)}">★ <span>${esc(c.title)}</span></button>`; }
 function memberOptions(sel, includeNone=true, noneLabel='Unassigned'){ return (includeNone?`<option value="">${noneLabel}</option>`:'') + teamList().map(m=>`<option value="${esc(m.id)}" ${m.id===sel?'selected':''}>${esc(m.name)}</option>`).join(''); }
 function channelOptions(sel){ return settings().channels.map(c=>`<option value="${esc(c.id)}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join(''); }
@@ -380,9 +384,9 @@ function renderCampaigns(){
 function drow(d, showCamp){
   const ch=channelById(d.channelId), c=campOf(d); const imgs=d.imagePaths||[];
   return `<button class="drow" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch,'lg')}
-    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${d.time?' · '+fmtT(d.time):''}${d.date&&d.status!=='posted'&&!DONE.has(d.status)&&d.date<todayStr()?' · <span style="color:var(--bad)">overdue</span>':''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
+    <div><div class="nm">${esc(showCamp?c.title:ch.name)}</div><div class="muted small">${showCamp?esc(ch.name)+' · ':''}${esc(fmtD(d.date))}${timeTxt(d)}${d.date&&d.status!=='posted'&&!DONE.has(d.status)&&d.date<todayStr()?' · <span style="color:var(--bad)">overdue</span>':''}${d.autoPublish&&!d.publishedAt?' · posts automatically':''}</div></div>
     <div class="snip">${d.publishError?`<span style="color:var(--bad)">Posting failed: ${esc(d.publishError)}</span>`:(esc((d.headline?d.headline+' — ':'')+(d.copy||'')) || '<em>No copy yet</em>')}</div>
-    <div class="thumbs">${imgs.slice(0,3).map(i=>`<img src="${esc(fileUrl(i))}" alt="">`).join('')}</div>${av(d.assigneeId)}${pill(d.status)}</button>`;
+    <div class="thumbs">${imgs.slice(0,3).map(i=>mediaTag(i)).join('')}</div>${av(d.assigneeId)}${pill(d.status)}</button>`;
 }
 function fileTile(c,f){ const k=fileKind(f), isImg=k==='image';
   return `<div class="ftile" title="${esc(f.name)}"><a class="open" href="${esc(fileUrl(f.path))}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)}"></a>
@@ -395,8 +399,8 @@ function renderCampaign(id){
   const inp=(f,label,type,ph,extra='')=>`<div class="field"><label class="lbl" for="c-${f}">${label}</label><input type="${type}" id="c-${f}" data-bind="camp:${f}" data-id="${I}" value="${esc(c[f]||'')}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra}></div>`;
   const pr=requestFor(id);
   const banner = pr ? `<div class="planbanner"><div style="flex:1;min-width:220px"><span class="lbl" style="margin:0">Planning a request · not approved yet</span>
-      <div class="prose" style="font-size:14px">From <strong>${esc(pr.requester_name)}</strong>${pr.ministry?' ('+esc(pr.ministry)+')':''}. Drag the destinations onto the days they should go out, then approve. ${esc(pr.requester_name.split(' ')[0])} gets an email listing every destination and date, and assignment emails go out to your team at the same time.</div></div>
-      <a class="btn sm" href="#request-${esc(pr.id)}">View request</a><button class="btn sm" data-action="req-decline" data-id="${esc(pr.id)}">Decline</button><button class="btn primary" data-action="req-approve" data-id="${esc(pr.id)}">Approve &amp; email</button></div>` : '';
+      <div class="prose" style="font-size:14px">From <strong>${esc(pr.requester_name)}</strong>${pr.ministry?' ('+esc(pr.ministry)+')':''}. Drag the destinations onto the days they should go out, then ${isAdmin()?'approve':'an admin approves'}. ${esc(pr.requester_name.split(' ')[0])} gets an email listing every destination and date, and assignment emails go out to your team at the same time.</div></div>
+      <a class="btn sm" href="#request-${esc(pr.id)}">View request</a>${isAdmin()?`<button class="btn sm" data-action="req-decline" data-id="${esc(pr.id)}">Decline</button><button class="btn primary" data-action="req-approve" data-id="${esc(pr.id)}">Approve &amp; email</button>`:`<span class="pill st-new">Waiting for admin approval</span>`}</div>` : '';
   return `<div class="row small" style="margin-bottom:12px"><a href="#campaigns">← All campaigns</a></div>${banner}
   <div class="cp">
     <section class="panel stack" aria-label="Event details">
@@ -493,8 +497,8 @@ function renderRequests(){
         ${sel.status!=='new'?`<dt>${sel.status==='approved'?'Approved':'Declined'}</dt><dd>${esc(reviewer?reviewer.name:'Staff')}${sel.reviewed_at?' · '+esc(new Date(sel.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})):''}${sel.decision_note?'\n“'+esc(sel.decision_note)+'”':''}</dd>`:''}
       </dl>
       ${sel.status==='new'?renderPlanSummary(sel, camp):''}
-      <div class="footbar">${sel.status==='new'?(camp?`<a class="btn dark" href="#campaign-${esc(camp.id)}">Edit schedule on calendar</a>`:`<button class="btn dark" data-action="req-plan" data-id="${esc(sel.id)}">Plan on calendar</button>`)+`<button class="btn primary" data-action="req-approve" data-id="${esc(sel.id)}">${camp?'Approve &amp; email':'Approve'}</button><button class="btn" data-action="req-decline" data-id="${esc(sel.id)}">Decline</button>`:''}
-        ${camp&&sel.status!=='new'?`<a class="btn dark" href="#campaign-${esc(camp.id)}">Open campaign</a>`:''}<span class="spacer"></span><button class="btn ghost sm danger" data-action="req-delete" data-id="${esc(sel.id)}">Delete</button></div>
+      <div class="footbar">${sel.status==='new'?(camp?`<a class="btn dark" href="#campaign-${esc(camp.id)}">Edit schedule on calendar</a>`:`<button class="btn dark" data-action="req-plan" data-id="${esc(sel.id)}">Plan on calendar</button>`)+(isAdmin()?`<button class="btn primary" data-action="req-approve" data-id="${esc(sel.id)}">${camp?'Approve &amp; email':'Approve'}</button><button class="btn" data-action="req-decline" data-id="${esc(sel.id)}">Decline</button>`:`<span class="small muted">Waiting for an admin to approve.</span>`):''}
+        ${camp&&sel.status!=='new'?`<a class="btn dark" href="#campaign-${esc(camp.id)}">Open campaign</a>`:''}<span class="spacer"></span>${isAdmin()?`<button class="btn ghost sm danger" data-action="req-delete" data-id="${esc(sel.id)}">Delete</button>`:''}</div>
     </section>`;
   } else h+=`<div class="empty">Select a request.</div>`;
   return h+`</div>`;
@@ -502,7 +506,7 @@ function renderRequests(){
 function renderPlanSummary(r, camp){
   if(!camp) return `<div class="planbanner" style="margin:0"><div class="prose" style="font-size:14px;flex:1">Plan the schedule before approving: <strong>Plan on calendar</strong> creates a campaign with the requested destinations so you can drag each one to its day. The approval email lists every destination and date.</div></div>`;
   const ds=destsOf(camp.id);
-  return `<div class="field"><span class="lbl">Planned schedule (goes in the approval email)</span>${ds.length?`<div class="dlist">${ds.map(d=>{ const ch=channelById(d.channelId); return `<button class="drow" style="grid-template-columns:auto 1fr auto" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch)}<div class="nm">${esc(ch.name)}</div><div class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${d.time?' · '+fmtT(d.time):''}</div></button>`; }).join('')}</div>`:'<div class="muted small">No destinations planned yet.</div>'}</div>`;
+  return `<div class="field"><span class="lbl">Planned schedule (goes in the approval email)</span>${ds.length?`<div class="dlist">${ds.map(d=>{ const ch=channelById(d.channelId); return `<button class="drow" style="grid-template-columns:auto 1fr auto" data-action="open-dest" data-id="${esc(d.id)}">${kb(ch)}<div class="nm">${esc(ch.name)}</div><div class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${timeTxt(d)}</div></button>`; }).join('')}</div>`:'<div class="muted small">No destinations planned yet.</div>'}</div>`;
 }
 function createCampaignFromRequest(r, opts={}){
   const start=r.start_date||ymd(addDays(new Date(),21)); const adEnd=r.end_date&&r.end_date>start?r.end_date:start;
@@ -583,7 +587,7 @@ function renderSettings(){
       ${admin&&t.id!==(m&&m.id)?`<select class="compact" id="role-${esc(t.id)}" data-role="${esc(t.id)}" aria-label="Role for ${esc(t.name)}"><option value="editor" ${t.role==='editor'?'selected':''}>Editor</option><option value="admin" ${t.role==='admin'?'selected':''}>Admin</option></select><button class="btn ghost iconbtn" data-action="remove-member" data-id="${esc(t.id)}" aria-label="Remove ${esc(t.name)}">✕</button>`:`<span class="pill ${t.role==='admin'?'st-posted':'st-draft'}">${t.role==='admin'?'Admin':'Editor'}</span><span></span>`}</div>`).join('')}</div>
     ${admin?`<form class="stack" data-form="invite" style="gap:10px"><div class="grid2"><div class="field"><label class="lbl" for="inv-name">Name</label><input type="text" id="inv-name" autocomplete="off"></div><div class="field"><label class="lbl" for="inv-email">Email</label><input type="email" id="inv-email" autocomplete="off" required></div></div>
       <div><button class="btn dark" type="submit" ${V.busy?'disabled':''}>${V.busy?'Sending…':'Send invite'}</button></div></form>
-      <p class="small muted" style="margin:0">They'll get an email with a link to choose a password. Admins can invite people, change roles and connect Facebook. Editors can do everything else.</p>`
+      <p class="small muted" style="margin:0">They'll get an email with a link to choose a password. Admins can invite people, change roles, connect Facebook, and approve or decline requests. Editors can do everything else, including planning requests.</p>`
       :`<p class="small muted" style="margin:0">Ask an admin to invite new staff.</p>`}
   </section>
   </div>`;
@@ -603,7 +607,7 @@ function renderDrawer(){
     <div class="field"><label class="lbl" for="d-details-${id}">What's it about?</label><textarea id="d-details-${id}" data-bind="dest:details" data-id="${id}" rows="3" placeholder="The key facts. The AI writer uses this.">${esc(d.details)}</textarea></div>`:''}
     <div class="grid2">
       <div class="field"><label class="lbl" for="d-date-${id}">Publish date</label><input type="date" id="d-date-${id}" data-bind="dest:date" data-id="${id}" value="${esc(d.date)}"></div>
-      <div class="field"><label class="lbl" for="d-time-${id}">Time</label><input type="time" id="d-time-${id}" data-bind="dest:time" data-id="${id}" value="${esc(d.time)}"></div>
+      ${k.social?`<div class="field"><label class="lbl" for="d-time-${id}">Time</label><input type="time" id="d-time-${id}" data-bind="dest:time" data-id="${id}" value="${esc(d.time)}"></div>`:''}
       <div class="field"><label class="lbl" for="d-chan-${id}">Destination</label><select id="d-chan-${id}" data-bind="dest:channelId" data-id="${id}">${channelOptions(d.channelId)}</select></div>
       <div class="field"><label class="lbl" for="d-camp-${id}">Campaign</label><select id="d-camp-${id}" data-bind="dest:campaignId" data-id="${id}"><option value="">None (one-off post)</option>${Object.values(S.campaigns).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(x=>`<option value="${esc(x.id)}" ${x.id===d.campaignId?'selected':''}>${esc(x.title)}${x.date?' · '+esc(fmtD(x.date,{month:'short',day:'numeric'})):''}</option>`).join('')}</select></div>
     </div>
@@ -622,12 +626,14 @@ function renderDrawer(){
       <textarea id="d-copy-${id}" data-bind="dest:copy" data-id="${id}" rows="8" placeholder="Write the ${esc(k.label.toLowerCase())} copy, or use Write with AI.">${esc(d.copy)}</textarea>
     </div>
     ${a.open?renderAI(d,a,k):''}
-    <div class="field"><span class="lbl">Photos for this destination</span>
-      <div class="photos">${imgs.map(p=>`<div class="photo"><a href="${esc(fileUrl(p))}" target="_blank" rel="noopener" aria-label="Open full-size photo"></a><img src="${esc(fileUrl(p))}" alt=""><button class="x" data-action="remove-photo" data-id="${id}" data-img="${esc(p)}" aria-label="Remove photo">×</button></div>`).join('')}
-      <label class="addphoto" for="up-${id}">+ Add<br>photos</label><input type="file" accept="image/*" multiple class="sr" id="up-${id}" data-upload="dest:${id}"></div>
+    <div class="field"><span class="lbl">Photos or video for this destination</span>
+      <div class="photos">${imgs.map(p=>`<div class="photo ${isVideo(p)?'vid':''}"><a href="${esc(fileUrl(p))}" target="_blank" rel="noopener" aria-label="Open full size"></a>${mediaTag(p)}<button class="x" data-action="remove-photo" data-id="${id}" data-img="${esc(p)}" aria-label="Remove">×</button></div>`).join('')}
+      <label class="addphoto" for="up-${id}">+ Add photos<br>or video</label><input type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple class="sr" id="up-${id}" data-upload="dest:${id}"></div>
+      ${k.social&&imgs.some(isVideo)&&imgs.length>1?`<span class="small" style="color:var(--bad);margin-top:6px">A video post can have just the one video. Remove the other items, or split them into separate posts.</span>`:''}
+      ${k.social&&imgs.some(isVideo)?`<span class="small muted" style="margin-top:6px">Video posts go to Facebook as a Page video and to Instagram as a Reel. Vertical (9:16) MP4 works best. Max ${maxMb()} MB.</span>`:''}
       ${!imgs.length&&c.coverPath?`<span class="small muted" style="margin-top:6px">Using the campaign's key art until you add a photo here.</span>`:''}
-      ${(()=>{ const avail=(c.files||[]).filter(f=>fileKind(f)==='image' && !imgs.includes(f.path)); if(!avail.length) return '';
-        return `<span class="small muted" style="margin:10px 0 6px">From campaign files (click to add):</span><div class="photos">${avail.map(f=>`<button class="photo" style="cursor:pointer" data-action="attach-file" data-id="${id}" data-file="${esc(f.path)}" title="Add ${esc(f.name)}"><img src="${esc(fileUrl(f.path))}" alt="${esc(f.name)}"></button>`).join('')}</div>`; })()}
+      ${(()=>{ const avail=(c.files||[]).filter(f=>(fileKind(f)==='image'||isVideo(f.path)) && !imgs.includes(f.path)); if(!avail.length) return '';
+        return `<span class="small muted" style="margin:10px 0 6px">From campaign files (click to add):</span><div class="photos">${avail.map(f=>`<button class="photo ${isVideo(f.path)?'vid':''}" style="cursor:pointer" data-action="attach-file" data-id="${id}" data-file="${esc(f.path)}" title="Add ${esc(f.name)}">${mediaTag(f.path)}</button>`).join('')}</div>`; })()}
     </div>`;
   if(k.social) html += renderSocial(d,c,ch,previewImg,s);
   html+=`<div class="field"><label class="lbl" for="d-notes-${id}">Notes for the team</label><textarea id="d-notes-${id}" data-bind="dest:notes" data-id="${id}" rows="3" placeholder="Approvals, links, who to tag…">${esc(d.notes)}</textarea></div>
@@ -638,14 +644,21 @@ function renderDrawer(){
 function renderSocial(d,c,ch,previewImg,s){
   const both = ch.kind==='social', ig = ch.kind==='instagram', needsIG = both||ig; const id=d.id; const so=S.social;
   const where = both?'Facebook & Instagram':ig?'Instagram':'Facebook';
-  const fbPrev=`<div class="preview fb"><div class="ph"><img src="/assets/mark-color.svg" alt="">${esc(s.handle)}</div><div class="pcap">${esc(d.copy||'Your post text appears here.')}</div><div class="pimg" style="${previewImg?`background-image:url('${esc(fileUrl(previewImg))}')`:''}">${previewImg?'':'Add a photo'}</div></div>`;
-  const igPrev=`<div class="preview ig"><div class="ph"><img src="/assets/mark-color.svg" alt="">${esc(s.handle)}</div><div class="pimg" style="${previewImg?`background-image:url('${esc(fileUrl(previewImg))}')`:''}">${previewImg?'':'Add a photo'}</div><div class="pcap"><strong>${esc(s.handle)}</strong> ${esc(d.copy||'Your caption appears here.')}</div></div>`;
+  const vid=(d.imagePaths||[]).find(isVideo);
+  const pm=(cls)=> vid ? `<div class="pimg ${cls}"><video src="${esc(fileUrl(vid))}" controls muted playsinline preload="metadata"></video></div>` : `<div class="pimg" style="${previewImg?`background-image:url('${esc(fileUrl(previewImg))}')`:''}">${previewImg?'':'Add a photo or video'}</div>`;
+  const fbPrev=`<div class="preview fb"><div class="ph"><img src="/assets/mark-color.svg" alt="">${esc(s.handle)}</div><div class="pcap">${esc(d.copy||'Your post text appears here.')}</div>${pm('')}</div>`;
+  const igPrev=`<div class="preview ig"><div class="ph"><img src="/assets/mark-color.svg" alt="">${esc(s.handle)}${vid?' · Reel':''}</div>${pm('reel')}<div class="pcap"><strong>${esc(s.handle)}</strong> ${esc(d.copy||'Your caption appears here.')}</div></div>`;
   const preview=`<div class="field"><span class="lbl">${where} preview</span>${both?`<div class="row" style="align-items:flex-start;gap:12px">${fbPrev}${igPrev}</div>`:ig?igPrev:fbPrev}</div>`;
   const parts=d.publishedParts||{};
   const links=[['facebook','Facebook'],['instagram','Instagram']].filter(([k])=>parts[k]&&parts[k].url).map(([k,l])=>`<a class="btn sm" href="${esc(parts[k].url)}" target="_blank" rel="noopener">View on ${l}</a>`).join('');
   let box;
   if(d.publishedAt){
     box=`<div class="postbox ok"><span class="lbl" style="margin:0">Posted</span><div>Posted ${both?'to Facebook and Instagram ':''}${esc(new Date(d.publishedAt).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}.</div><div class="row">${links || (d.externalUrl?`<a class="btn sm" href="${esc(d.externalUrl)}" target="_blank" rel="noopener">View post</a>`:'')}</div></div>`;
+  } else if(d.publishPending){
+    box=`<div class="postbox"><span class="lbl" style="margin:0">Processing</span>
+      <div class="row"><span class="spinner" aria-hidden="true"></span><span>${vid?'The video is processing':'Posting is in progress'}. It finishes in the background, usually within a few minutes. You can close this.</span></div>
+      ${links?`<div class="row"><span class="small">Already posted:</span>${links}</div>`:''}
+      <div><button class="btn sm" data-action="check-post" data-id="${id}" ${V.busy?'disabled':''}>${V.busy?'Checking…':'Check now'}</button></div></div>`;
   } else if(so && so.connected && (!needsIG || so.hasInstagram)){
     const when = d.date ? `${fmtD(d.date,{weekday:'long',month:'short',day:'numeric'})}${d.time?' at '+fmtT(d.time):' at 9:00 AM'}` : 'its publish date';
     box=`<div class="postbox ${d.publishError?'err':''}"><span class="lbl" style="margin:0">Post to ${where}</span>
@@ -701,7 +714,7 @@ function renderModal(){
   if(m.type==='req-approve'||m.type==='req-decline'){ const r=S.requests[m.id]; const ap=m.type==='req-approve'; const planned=r.campaign_id&&S.campaigns[r.campaign_id]; const pds=planned?destsOf(r.campaign_id):[];
     return wrap(`<h2 id="m-t">${ap?'Approve':'Decline'} request</h2><p class="prose" style="margin:0">${esc(r.title)} · from ${esc(r.requester_name)}</p>
       ${ap&&!planned?`<label class="check"><input type="checkbox" id="ra-camp" ${m.createCampaign?'checked':''}><span>Create a campaign with the requested destinations<br><span class="small muted">They're scheduled 3 days before the event. To choose the dates yourself first, cancel and use <strong>Plan on calendar</strong>.</span></span></label>`:''}
-      ${ap&&planned?`<div class="field"><span class="lbl">Schedule in the email</span><div class="dlist">${pds.map(d=>{ const ch=channelById(d.channelId); return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">${kb(ch)}<strong style="flex:1">${esc(ch.name)}</strong><span class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${d.time?' · '+fmtT(d.time):''}</span></div>`; }).join('')||'<span class="muted small">No destinations planned.</span>'}</div></div>`:''}
+      ${ap&&planned?`<div class="field"><span class="lbl">Schedule in the email</span><div class="dlist">${pds.map(d=>{ const ch=channelById(d.channelId); return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">${kb(ch)}<strong style="flex:1">${esc(ch.name)}</strong><span class="small">${esc(fmtD(d.date,{weekday:'short',month:'short',day:'numeric'}))}${timeTxt(d)}</span></div>`; }).join('')||'<span class="muted small">No destinations planned.</span>'}</div></div>`:''}
       ${ap?`<label class="check"><input type="checkbox" id="ra-sched" ${m.includeSchedule!==false?'checked':''}><span>Include the destinations and dates in the email</span></label>`:''}
       ${!ap&&planned?`<label class="check"><input type="checkbox" id="ra-rmplan" checked><span>Delete the planned campaign and its ${pds.length} destination${pds.length===1?'':'s'}</span></label>`:''}
       <label class="check"><input type="checkbox" id="ra-notify" ${m.notify?'checked':''}><span>Email ${esc(r.requester_name)} (${esc(r.requester_email)})</span></label>
@@ -713,7 +726,7 @@ function renderModal(){
   if(m.type==='add-dests'){
     const c=S.campaigns[m.campaignId]; const used=new Set(destsOf(m.campaignId).map(d=>d.channelId));
     const rows=settings().channels.map(ch=>{ const r=m.rows[ch.id]||(m.rows[ch.id]={on:false,date:todayStr(),time:defaultTime(ch.id),assigneeId:defaultOwner(ch.id)}); const C=esc(ch.id); return `<div class="mrow ${r.on?'':'off'}"><input type="checkbox" id="m-on-${C}" data-mrow="${C}:on" ${r.on?'checked':''}><label for="m-on-${C}" class="row" style="gap:8px;cursor:pointer">${kb(ch)}<span><strong>${esc(ch.name)}</strong>${used.has(ch.id)?' <span class="small muted">· already added</span>':''}</span></label>
-      <input class="ctl" type="date" id="m-date-${C}" data-mrow="${C}:date" value="${esc(r.date)}" aria-label="${esc(ch.name)} date"><input class="ctl" type="time" id="m-time-${C}" data-mrow="${C}:time" value="${esc(r.time)}" aria-label="${esc(ch.name)} time"><select class="ctl" id="m-who-${C}" data-mrow="${C}:assigneeId" aria-label="${esc(ch.name)} assignee">${memberOptions(r.assigneeId)}</select></div>`; }).join('');
+      <input class="ctl" type="date" id="m-date-${C}" data-mrow="${C}:date" value="${esc(r.date)}" aria-label="${esc(ch.name)} date">${hasTime(ch)?`<input class="ctl" type="time" id="m-time-${C}" data-mrow="${C}:time" value="${esc(r.time)}" aria-label="${esc(ch.name)} time">`:'<span class="ctl small muted">Date only</span>'}<select class="ctl" id="m-who-${C}" data-mrow="${C}:assigneeId" aria-label="${esc(ch.name)} assignee">${memberOptions(r.assigneeId)}</select></div>`; }).join('');
     const n=Object.values(m.rows).filter(r=>r.on).length;
     return wrap(`<h2 id="m-t">Add destinations</h2><p class="sub" style="margin:0">For ${esc(c?c.title:'this campaign')}. Pick where it goes, then set when each one publishes and who owns it.</p><div>${rows}</div>
       <form class="row" data-form="modal-new-channel"><input type="text" id="m-newname" placeholder="New destination, e.g. Kids Ministry Facebook group" aria-label="New destination name" style="flex:1;min-width:200px"><select id="m-newkind" class="compact" aria-label="New destination type">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${k==='other'?'selected':''}>${v.label}</option>`).join('')}</select><button class="btn sm" type="submit">+ Add new</button></form>
@@ -732,7 +745,10 @@ function iconSearch(q){
       box.innerHTML = (r.icons&&r.icons.length) ? iconCells(r.icons,cur) : '<span class="small muted">No icons found. Try a simpler word.</span>'; }
     catch(e){ box.innerHTML='<span class="small muted">Icon search is unavailable right now.</span>'; } }, 300);
 }
-function defaultTime(chanId){ const k=channelById(chanId).kind; return k==='slides'||k==='announcement'||k==='bulletin' ? '08:30' : k==='text' ? '12:00' : '09:00'; }
+// Only Facebook, Instagram and Social destinations have a time (they can post automatically). Everything else is date-only.
+const hasTime = chOrId => !!kindOf(typeof chOrId==='string'?channelById(chOrId):chOrId).social;
+function defaultTime(chanId){ return hasTime(chanId) ? '09:00' : ''; }
+const timeTxt = (d, sep=' · ') => hasTime(d.channelId) && d.time ? sep+fmtT(d.time) : '';
 function openAddDests(cid){
   const c=S.campaigns[cid]; const base=c&&parseYmd(c.date);
   let def = base ? addDays(base,-3) : addDays(new Date(),7); if(ymd(def)<todayStr()) def=new Date();
@@ -758,6 +774,11 @@ async function copyText(text){ try{ await navigator.clipboard.writeText(text); t
 function pathInUse(path){ return Object.values(S.dests).some(d=>(d.imagePaths||[]).includes(path)) || Object.values(S.campaigns).some(c=>c.coverPath===path || (c.files||[]).some(f=>f.path===path)); }
 async function deleteFileIfUnused(path){ if(path && !pathInUse(path)) await sb.storage.from('files').remove([path]).catch(()=>{}); }
 
+function applyPostResult(d, r){
+  d.publishedParts=r.parts||d.publishedParts; d.publishError='';
+  if(r.done){ d.status='posted'; d.publishedAt=new Date().toISOString(); d.externalUrl=r.url||''; d.publishPending=false; toast('Posted!'); }
+  else { d.publishPending=true; toast('Started. It will finish posting in the background in a few minutes.'); }
+}
 const A = {
   'pick-icon'(el){ V.modal={type:'icon-picker', channelId:el.dataset.id}; render(true); setTimeout(()=>{ const q=document.getElementById('icon-q'); if(q) q.focus(); },30); },
   'set-icon'(el){ const ch=settings().channels.find(c=>c.id===V.modal.channelId); if(!ch) return; ch.icon=el.dataset.icon; saveSettings(); V.modal=null; render(true); toast(`Icon updated for ${ch.name}`); },
@@ -769,12 +790,12 @@ const A = {
   'req-filter'(el){ V.reqFilter=el.dataset.f; V.requestId=null; if(location.hash!=='#requests') history.replaceState(null,'','#requests'); render(true); },
   'open-request'(el){ V.requestId=el.dataset.id; history.replaceState(null,'','#request-'+el.dataset.id); render(true); },
   'copy-form-link'(){ copyText(location.origin+'/request'); },
-  'req-approve'(el){ V.modal={type:'req-approve', id:el.dataset.id, createCampaign:true, notify:true, includeSchedule:true, note:''}; render(true); },
-  'req-decline'(el){ V.modal={type:'req-decline', id:el.dataset.id, notify:true, note:''}; render(true); },
+  'req-approve'(el){ if(!isAdmin()){ toast('Only admins can approve requests.'); return; } V.modal={type:'req-approve', id:el.dataset.id, createCampaign:true, notify:true, includeSchedule:true, note:''}; render(true); },
+  'req-decline'(el){ if(!isAdmin()){ toast('Only admins can decline requests.'); return; } V.modal={type:'req-decline', id:el.dataset.id, notify:true, note:''}; render(true); },
   'req-approve-go'(){ const m=V.modal; m.note=(document.getElementById('ra-note')||{}).value||''; m.createCampaign=!!(document.getElementById('ra-camp')||{}).checked; m.notify=!!(document.getElementById('ra-notify')||{}).checked; m.includeSchedule=!!(document.getElementById('ra-sched')||{}).checked; approveRequest(m); },
   'req-decline-go'(){ const m=V.modal; m.note=(document.getElementById('ra-note')||{}).value||''; m.notify=!!(document.getElementById('ra-notify')||{}).checked; m.removePlan=!!(document.getElementById('ra-rmplan')||{}).checked; declineRequest(m); },
   'req-plan'(el){ planRequest(el.dataset.id); },
-  'req-delete'(el){ const r=S.requests[el.dataset.id]; confirmBox('Delete this request?', `"${r.title}" from ${r.requester_name} will be removed. Its files stay in storage if a campaign uses them.`, async ()=>{
+  'req-delete'(el){ if(!isAdmin()) return; const r=S.requests[el.dataset.id]; confirmBox('Delete this request?', `"${r.title}" from ${r.requester_name} will be removed. Its files stay in storage if a campaign uses them.`, async ()=>{
       const { error } = await sb.from('requests').delete().eq('id',r.id); if(error){ toast(error.message); return; } delete S.requests[r.id]; V.requestId=null; render(true); }); },
   'auth-mode'(el){ V.authMode=el.dataset.mode; V.authErr=''; V.authMsg=''; render(true); },
   'sign-out'(){ flushAll(); sb.auth.signOut(); },
@@ -814,7 +835,7 @@ const A = {
   'remove-file'(el){ const c=S.campaigns[el.dataset.id]; const f=(c.files||[]).find(x=>x.path===el.dataset.file); if(!f) return;
     confirmBox(`Remove ${f.name}?`, 'It will be removed from this campaign\'s files.', ()=>{ c.files=(c.files||[]).filter(x=>x.path!==f.path); saveCampaign(c); deleteFileIfUnused(f.path); }, 'Remove'); },
   async 'attach-file'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const path=el.dataset.file;
-    if(/\.jpe?g$/i.test(path)){ d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); render(true); return; }
+    if(/\.jpe?g$/i.test(path) || isVideo(path)){ d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); render(true); return; }
     // social posts need JPEG: make a JPEG copy for this destination
     try{ toast('Preparing photo…'); const blob=await fetch(fileUrl(path)).then(r=>r.blob()); const jpg=await toJpeg(blob); const np=`photos/${d.id}/${uid()}.jpg`;
       const { error } = await sb.storage.from('files').upload(np, jpg, {contentType:'image/jpeg'}); if(error) throw error;
@@ -826,9 +847,12 @@ const A = {
   async 'post-now'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const ch=channelById(d.channelId);
     confirmBox(`Post to ${ch.kind==='social'?'Facebook and Instagram':kindOf(ch).label} now?`, 'This publishes the caption and photos to the church\'s page right away.', async ()=>{
       flushAll(); V.busy=true; render(true);
-      try{ await new Promise(r=>setTimeout(r,400)); const r=await api('publish-now',{id:d.id}); d.status='posted'; d.publishedAt=new Date().toISOString(); d.externalUrl=r.url||''; d.publishedParts=r.parts||d.publishedParts; d.publishError=''; toast('Posted!'); }
+      try{ await new Promise(r=>setTimeout(r,400)); const r=await api('publish-now',{id:d.id}); applyPostResult(d,r); }
       catch(e){ d.publishError=e.message; toast('Posting failed: '+e.message); }
       V.busy=false; render(true); }, 'Post now'); },
+  async 'check-post'(el){ const d=S.dests[el.dataset.id]; if(!d) return; V.busy=true; render(true);
+    try{ applyPostResult(d, await api('publish-now',{id:d.id})); }catch(e){ if(/already/i.test(e.message)) toast('Still working on it in the background.'); else { d.publishError=e.message; d.publishPending=false; toast('Posting failed: '+e.message); } }
+    V.busy=false; render(true); },
   async 'clear-error'(el){ const d=S.dests[el.dataset.id]; d.publishError=''; const { error } = await sb.from('destinations').update({publish_error:''}).eq('id',d.id); if(error) toast(error.message); render(true); },
   'add-social'(){ settings().channels.unshift({id:'social', name:'Social (Facebook + Instagram)', kind:'social'}); saveSettings(); render(true); toast('Added Social. It posts one caption to both Facebook and Instagram.'); },
   'add-channel'(){ const id=uid().slice(0,8); settings().channels.push({id, name:'New destination', kind:'other'}); saveSettings(); render(true); setTimeout(()=>{ const el=document.getElementById('ch-name-'+id); if(el){el.focus(); el.select();} },30); },
@@ -877,6 +901,7 @@ document.addEventListener('submit', async e=>{
 function onField(el, committed){
   const [kind, field]=el.dataset.bind.split(':'); const id=el.dataset.id; const val = el.type==='checkbox' ? el.checked : el.value;
   if(kind==='dest'){ const d=S.dests[id]; if(!d) return; const before=d[field];
+    if(field==='channelId'){ if(hasTime(val) && !d.time) d.time='09:00'; if(!hasTime(val)) d.time=''; }
     if(field==='campaignId' && !val && before && !d.title){ const oc=S.campaigns[before]; if(oc){ d.title=oc.title; d.details=d.details||oc.description||''; } }
     d[field]=val;
     saveDest(d, committed?0:700);
@@ -919,12 +944,15 @@ async function toJpeg(blob, max=2048){
 async function handleUpload(el){
   const [kind,id]=el.dataset.upload.split(':'); const files=[...el.files]; el.value=''; let n=0;
   for(const f of files){
-    if(kind!=='file' && !f.type.startsWith('image/')){ toast(`${f.name} isn't an image`); continue; }
-    if(f.size>50*1024*1024){ toast(`${f.name} is over 50 MB`); continue; }
+    const vid = /^video\//.test(f.type) || isVideo(f.name);
+    if(kind==='dest' && !f.type.startsWith('image/') && !vid){ toast(`${f.name} isn't a photo or video`); continue; }
+    if(kind!=='file' && kind!=='dest' && !f.type.startsWith('image/')){ toast(`${f.name} isn't an image`); continue; }
+    if(f.size>maxMb()*1024*1024){ toast(`${f.name} is over ${maxMb()} MB`); continue; }
     toast(`Uploading ${f.name}…`);
     try{
       let body=f, type=f.type||'application/octet-stream', path;
-      if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
+      if(kind==='dest' && vid){ const ext=(f.name.match(/\.(mp4|mov|m4v)$/i)||['','mp4'])[1].toLowerCase(); type=f.type||(ext==='mov'?'video/quicktime':'video/mp4'); path=`photos/${id}/${uid()}.${ext}`; }
+      else if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
       else if(kind==='cover'){ body=await toJpeg(f); type='image/jpeg'; path=`campaigns/${id}/cover-${uid().slice(0,8)}.jpg`; }
       else path=`campaigns/${id}/${uid().slice(0,8)}-${safeName(f.name)}`;
       const { error } = await sb.storage.from('files').upload(path, body, { contentType:type, upsert:false });

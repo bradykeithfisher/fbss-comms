@@ -74,6 +74,7 @@ Plan on about an hour for setup. Facebook/Instagram (step 6) can wait until late
    | `EMAIL_FROM` | `FBSS Communications <comms@fbss.church>` (must use your verified domain) |
    | `REQUEST_NOTIFY_EMAILS` | optional: who hears about new requests, comma separated. If blank, all admins are emailed. |
    | `CHURCH_TIMEZONE` | `America/Chicago` (optional; this is the default) |
+   | `MAX_UPLOAD_MB` | optional: largest upload in MB (default `50`; see **Videos** below before raising it) |
 
 4. Go to **Deploys → Trigger deploy → Deploy site** so the new variables take effect.
 5. Open the `…netlify.app` address and sign in with the admin login from step 1.7.
@@ -133,6 +134,10 @@ Each destination has an **Assigned to** person. **It's due on the day it's sched
 - Request plans that aren't approved yet don't send assignment emails. They all go out the moment you approve, so nobody gets tasks for a request you might decline.
 - Changing an auto-assign setting only affects destinations created afterward. Existing assignments stay as they are.
 
+## Dates and times
+
+Only **Facebook, Instagram and Social** destinations have a time, because that's when they post automatically (9:00 AM unless you change it). Every other destination (email, slides, bulletin, announcements, text, website) is date-only, and emails to staff and requesters show just the date for those.
+
 ## One-off posts
 
 Not everything needs a campaign. On the **Calendar** page, click **+ One-off post**, or click **+ Add** on any day and choose **One-off post**.
@@ -156,6 +161,7 @@ Staff and ministry leaders request communications at **https://comms.fbss.church
 - **Approve & email** (on the banner or the request) shows the schedule. It then emails the requester a list of every destination with its date and time, plus your message if you add one.
   - If you approve without planning first, a campaign is still created, with destinations 3 days before the event.
 - **Decline** emails them if you leave that checked, and can delete the planned campaign.
+- **Only admins can approve, decline or delete requests.** Editors can view requests and plan them on the calendar. They see "Waiting for admin approval" until an admin approves. This is enforced on the server, not just hidden in the app.
 - The form has a hidden spam trap. If spam ever becomes a problem, a CAPTCHA can be added.
 
 ## 9. Social destination (Facebook + Instagram together)
@@ -166,6 +172,23 @@ The **Social (Facebook + Instagram)** destination posts one caption and the same
 - Before posting anything, Social checks both platforms' requirements: at least one photo, and a caption under 2,200 characters. That way it won't go out on just one platform because of a fixable problem.
 - If one platform fails anyway (say Instagram is down), the other stays posted. The error shows on the destination, and **Try again** retries only the platform that failed, so nothing is posted twice.
 
+### Videos
+
+Facebook, Instagram and Social destinations can post a **video** instead of photos:
+- On Facebook it posts as a Page video. On Instagram it posts as a **Reel**, shared to the main feed too.
+- A video post has just the one video, with no photos alongside it. The app warns you if you mix them.
+- MP4 or MOV, vertical (9:16) is best for Reels.
+
+**Posting runs in the background.** Instagram takes anywhere from about 30 seconds to several minutes to process a video. When you click **Post now**, the app starts the post and shows **Processing**. You can close the window; the every-5-minute background job checks on it and finishes posting. **Check now** checks right away. Multi-photo posts work the same way, so they never time out.
+
+**Video file size:** uploads are limited to **50 MB** by default, which is about a minute of 1080p phone video. Supabase's free plan doesn't allow bigger files. To go larger:
+1. Upgrade Supabase to Pro and raise the upload limit under **Project Settings → Storage**.
+2. Run this in the SQL Editor, using your new limit in bytes (this example is 500 MB):
+   ```sql
+   update storage.buckets set file_size_limit = 524288000 where id = 'files';
+   ```
+3. Add `MAX_UPLOAD_MB` (for example `500`) to the Netlify environment variables and redeploy.
+
 ## 10. Destination icons
 
 In **Settings → Destinations**, click any destination's icon to choose a new one. You can search thousands of free icons from **Lucide**, plus brand logos (YouTube, TikTok, Spotify and more) from **Simple Icons**. Icons load from the free Iconify service (api.iconify.design). If it's ever unreachable, the two-letter labels show instead.
@@ -174,7 +197,7 @@ In **Settings → Destinations**, click any destination's icon to choose a new o
 
 Go to **Settings → Team**, enter a name and email, and click **Send invite**. They get an email, click the link, choose a password, and they're in.
 
-- **Admins** can invite or remove people, change roles and connect Facebook.
+- **Admins** can invite or remove people, change roles, connect Facebook, and approve, decline or delete requests.
 - **Editors** can do everything else.
 - Anyone can reset their own password with **Forgot password?** on the sign-in page.
 

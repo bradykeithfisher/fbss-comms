@@ -3,6 +3,6 @@ import { env, json, PUBLIC_KEY } from '../lib/shared.mjs';
 export default async () => {
   const url = env('SUPABASE_URL'), anon = PUBLIC_KEY();
   if (!url || !anon) return json({ error: 'The site is missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY. Add them in Netlify → Site configuration → Environment variables, then redeploy.' }, 500);
-  return json({ supabaseUrl: url, supabaseAnonKey: anon, aiEnabled: !!env('ANTHROPIC_API_KEY'), timezone: env('CHURCH_TIMEZONE', 'America/Chicago') });
+  return json({ supabaseUrl: url, supabaseAnonKey: anon, aiEnabled: !!env('ANTHROPIC_API_KEY'), timezone: env('CHURCH_TIMEZONE', 'America/Chicago'), maxUploadMb: Number(env('MAX_UPLOAD_MB', '50')) || 50 });
 };
 export const config = { path: '/api/config' };

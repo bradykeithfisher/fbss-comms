@@ -217,3 +217,21 @@ alter table public.destinations add column if not exists published_parts jsonb n
 alter table public.destinations alter column campaign_id drop not null;
 alter table public.destinations add column if not exists title text not null default '';
 alter table public.destinations add column if not exists details text not null default '';
+
+-- =====================================================================
+-- Update 5: only admins approve, decline or delete requests
+-- Approve/decline go through a server function that checks for admin.
+-- Editors may only link a planned campaign to a request.
+-- =====================================================================
+revoke update on public.requests from authenticated;
+grant update (campaign_id) on public.requests to authenticated;
+drop policy if exists "staff delete requests" on public.requests;
+drop policy if exists "admins delete requests" on public.requests;
+create policy "admins delete requests" on public.requests for delete to authenticated using (public.is_admin());
+
+-- =====================================================================
+-- Update 6: video posts + background posting (work in progress is saved between steps)
+-- =====================================================================
+alter table public.destinations add column if not exists publish_state jsonb not null default '{}'::jsonb;
+alter table public.destinations add column if not exists publish_pending boolean not null default false;
+create index if not exists destinations_pending_idx on public.destinations(id) where publish_pending;

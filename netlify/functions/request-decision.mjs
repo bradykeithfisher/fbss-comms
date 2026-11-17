@@ -5,6 +5,7 @@ export default async (req) => {
   if (req.method !== 'POST') return fail('Use POST', 405);
   const user = await requireUser(req);
   if (!user) return fail('Please sign in again.', 401);
+  if (!user.isAdmin) return fail('Only admins can approve or decline requests.', 403);
   const { id, decision, note, campaignId, notify = true, includeSchedule = true } = await req.json().catch(() => ({}));
   if (!['approved', 'declined'].includes(decision)) return fail('Unknown decision.');
   const [r] = await db(`requests?id=eq.${encodeURIComponent(id)}&select=*`);
@@ -26,9 +27,11 @@ export default async (req) => {
     if (ds.length) {
       schedule = `<p style="margin:18px 0 8px;font:600 11px Arial,sans-serif;letter-spacing:1.5px;text-transform:uppercase;color:#686E75">Where and when it goes out</p>
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #DED6C5">${ds.map((d) => {
-          const name = (chans.find((c) => c.id === d.channel_id) || { name: d.channel_id }).name;
+          const ch = chans.find((c) => c.id === d.channel_id) || { name: d.channel_id };
+          const name = ch.name;
+          const timed = ['social', 'facebook', 'instagram'].includes(ch.kind);  // only social posts have a time
           return `<tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid #DED6C5;font:600 15px Georgia,serif;color:#414A55">${esc(name)}</td>
-            <td style="padding:9px 0;border-bottom:1px solid #DED6C5;font:15px Georgia,serif;color:#2E343C;text-align:right">${d.publish_date ? esc(fmtDate(d.publish_date)) + (d.publish_time ? `<br><span style="color:#686E75;font-size:13px">${esc(fmtTime(d.publish_time))}</span>` : '') : 'Date to be set'}</td></tr>`;
+            <td style="padding:9px 0;border-bottom:1px solid #DED6C5;font:15px Georgia,serif;color:#2E343C;text-align:right">${d.publish_date ? esc(fmtDate(d.publish_date)) + (timed && d.publish_time ? `<br><span style="color:#686E75;font-size:13px">${esc(fmtTime(d.publish_time))}</span>` : '') : 'Date to be set'}</td></tr>`;
         }).join('')}</table>
         <p style="margin:8px 0 0;font:13px Georgia,serif;color:#686E75">Dates can shift a little as we finalize the schedule.</p>`;
     }

@@ -29,7 +29,7 @@ export default async (req) => {
         heading: 'You have a new assignment',
         intro: `${by.replace(/</g, '&lt;')} assigned you the <strong>${String(ch.name).replace(/</g, '&lt;')}</strong> piece for <strong>${String(camp.title).replace(/</g, '&lt;')}</strong>.`,
         rows: [
-          ['Due', d.publish_date ? fmtDate(d.publish_date) + (d.publish_time ? ', ' + fmtTime(d.publish_time) : '') + ' (the day it goes out)' : 'Not scheduled yet'],
+          ['Due', d.publish_date ? fmtDate(d.publish_date) + (['social', 'facebook', 'instagram'].includes(ch.kind) && d.publish_time ? ', ' + fmtTime(d.publish_time) : '') + ' (the day it goes out)' : 'Not scheduled yet'],
           ['Event', camp.start_date ? fmtDate(camp.start_date) : ''],
           ['Location', camp.location],
           ['Notes', d.notes],
