@@ -26,7 +26,19 @@ const URL_ = () => env('SUPABASE_URL').replace(/\/$/, '');
 // API keys are plain ASCII. Pasted keys sometimes carry invisible characters, quotes or a "Bearer " prefix,
 // which make the request fail before it's sent, so keep only the key itself.
 export const cleanKey = (k: string) => k.replace(/^\s*(bearer\s+)?["'“”‘’]?/i, '').replace(/[^\x21-\x7E]/g, '').replace(/["'“”‘’]+$/, '');
-const OPENAI_KEY = () => cleanKey(env('OPENAI_API_KEY'));
+// Find the key inside whatever was saved (e.g. "OPENAI_API_KEY=sk-...", or a key split across lines).
+export const findOpenAIKey = (raw: string) => {
+  const joined = String(raw || '').replace(/[^\x21-\x7E]/g, '');
+  const m = joined.match(/sk-[A-Za-z0-9_-]{20,}/);
+  return m ? m[0] : '';
+};
+const OPENAI_KEY = () => findOpenAIKey(env('OPENAI_API_KEY'));
+// A safe description of a bad secret (never the key itself), to help fix it.
+const describeSecret = (raw: string) => {
+  const t = String(raw || '').trim();
+  const kinds = [/\s/.test(t) && 'spaces or line breaks', /[^\x00-\x7E]/.test(t) && 'hidden or special characters', /=/.test(t) && 'an equals sign', /["'“”‘’]/.test(t) && 'quote marks'].filter(Boolean);
+  return `It's ${t.length} characters long and starts with "${t.slice(0, 3).replace(/[^\x21-\x7E]/g, '?')}"${kinds.length ? ', and has ' + kinds.join(', ') : ''}.`;
+};
 const SECRET = () => cleanKey(firstKey('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY'));
 const PUBLIC = () => cleanKey(firstKey('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY'));
 const svcHeaders = (extra: Record<string, string> = {}) => {
@@ -144,8 +156,8 @@ export async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'Use POST' }, 405);
   const user = await signedInUser(req);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
-  if (!OPENAI_KEY()) return json({ error: "AI artwork isn't set up yet. Add OPENAI_API_KEY in Supabase under Edge Functions > Secrets." }, 503);
-  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(OPENAI_KEY())) return json({ error: "The OpenAI key saved in Supabase doesn't look right. It should start with sk- and contain no spaces. Paste it again under Edge Functions > Secrets (OPENAI_API_KEY)." }, 503);
+  if (!env('OPENAI_API_KEY')) return json({ error: "AI artwork isn't set up yet. Add OPENAI_API_KEY in Supabase under Edge Functions > Secrets." }, 503);
+  if (!OPENAI_KEY()) return json({ error: `Couldn't find an OpenAI key in the OPENAI_API_KEY secret. ${describeSecret(env('OPENAI_API_KEY'))} An OpenAI key starts with sk- and is one long line.` }, 503);
   const body = await req.json().catch(() => ({}));
   const id = String(body.jobId || '');
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Bad request.' }, 400);
