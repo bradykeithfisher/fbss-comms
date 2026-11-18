@@ -378,6 +378,10 @@ function renderCalendar(){
   else { const first=new Date(V.anchor.getFullYear(),V.anchor.getMonth(),1); const st=startOfWeek(first); days=[...Array(42)].map((_,i)=>addDays(st,i));
     if(days[35].getMonth()!==first.getMonth()) days=days.slice(0,35); label=first.toLocaleDateString('en-US',{month:'long',year:'numeric'}); }
   const inRange=list.filter(d=>{ const dt=parseYmd(d.date); return dt && dt>=days[0] && dt<=days[days.length-1]; });
+  V.calRange=[ymd(days[0]), ymd(days[days.length-1])];
+  // Pieces that can be marked done in bulk: open tasks (social posts are marked Posted when they go out).
+  const openTask=d=>!isSocialDest(d) && !isDone(d);
+  const fCh=V.fChan&&channelById(V.fChan); const bulkN=fCh&&!kindOf(fCh).social ? inRange.filter(openTask).length : 0;
   const unassigned=inRange.filter(d=>!d.assigneeId).length, notReady=inRange.filter(needsApproval).length, posted=inRange.filter(isDone).length;
   const toolbar=`<div class="toolbar">
     <div class="row"><button class="btn iconbtn" data-action="cal-prev" aria-label="Previous">‹</button><button class="btn sm" data-action="cal-today">Today</button><button class="btn iconbtn" data-action="cal-next" aria-label="Next">›</button></div>
@@ -387,13 +391,16 @@ function renderCalendar(){
     <button class="btn dark" data-action="new-oneoff">+ One-off<span class="wide-only"> post</span></button>
     <select class="compact" id="f-chan" data-ui="fChan" aria-label="Filter by destination"><option value="">All destinations</option>${channelOptions(V.fChan)}</select>
     <select class="compact" id="f-person" data-ui="fPerson" aria-label="Filter by person"><option value="">Everyone</option><option value="none" ${V.fPerson==='none'?'selected':''}>Unassigned</option>${memberOptions(V.fPerson,false)}</select>
+    ${bulkN?`<button class="btn sm" data-action="bulk-done" data-chan="${esc(V.fChan)}">✓ Mark all ${esc(fCh.name)} done (${bulkN})</button>`:''}
   </div>
   <div class="stats"><div class="stat" style="--p:var(--dusty)"><b>${inRange.length}</b> scheduled</div><div class="stat" style="--p:var(--gold)"><b>${notReady}</b> social drafts</div><div class="stat" style="--p:var(--rust)"><b>${unassigned}</b> unassigned</div><div class="stat" style="--p:var(--moss)"><b>${posted}</b> done</div></div>`;
   if(!Object.keys(S.campaigns).length && !Object.keys(S.dests).length) return toolbar+`<div class="empty"><img src="/assets/mark-color.svg" alt=""><p><strong>Nothing scheduled yet.</strong></p><p>Create a campaign for an upcoming event, or add a one-off post that isn't part of a campaign.</p><div class="row" style="justify-content:center"><button class="btn primary" data-action="new-campaign">+ New campaign</button><button class="btn dark" data-action="new-oneoff">+ One-off post</button></div></div>`;
   if(V.calMode==='list'){
     let h=`<div class="agenda">`;
     for(const d of days){ const k=ymd(d); const items=(byKey[k]||[]).sort(byWhen); const ev=evts[k]||[];
-      h+=`<section class="aday-l ${k===today?'today':''}" data-drop="${k}"><div class="ah"><span class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</span><span class="dd">${d.getDate()}</span><span class="dm">${d.toLocaleDateString('en-US',{month:'short'})}</span><span class="spacer"></span><button class="btn ghost sm" data-action="agenda-add" data-date="${k}" aria-label="Add on ${esc(fmtD(k))}">+ Add</button></div>
+      const byCh={}; for(const x of items) if(openTask(x)) (byCh[x.channelId] ||= []).push(x);
+      const dayBulk=Object.entries(byCh).filter(([,l])=>l.length>1).map(([cid,l])=>`<button class="btn ghost sm bulkday" data-action="bulk-done" data-chan="${esc(cid)}" data-date="${k}">✓ All ${esc(channelById(cid).name)} done</button>`).join('');
+      h+=`<section class="aday-l ${k===today?'today':''}" data-drop="${k}">${dayBulk?`<div class="bulkrow">${dayBulk}</div>`:''}<div class="ah"><span class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</span><span class="dd">${d.getDate()}</span><span class="dm">${d.toLocaleDateString('en-US',{month:'short'})}</span><span class="spacer"></span><button class="btn ghost sm" data-action="agenda-add" data-date="${k}" aria-label="Add on ${esc(fmtD(k))}">+ Add</button></div>
         ${ev.map(evtBtn).join('')}
         ${items.length?items.map(x=>{ const ch=channelById(x.channelId), c=campOf(x); return `<button class="arow ${isPending(x.campaignId)?'pending':''}" style="--c:${esc(c.color)}" data-action="open-dest" data-id="${esc(x.id)}">${kb(ch)}<span class="at"><strong>${esc(c.title)}</strong><span class="small muted">${esc(ch.name)}${timeTxt(x)}</span></span>${x.assigneeId?av(x.assigneeId):''}${pill(x)}</button>`; }).join(''):(ev.length?'':'<div class="small muted aempty">Nothing scheduled</div>')}
       </section>`; }
@@ -1041,6 +1048,13 @@ const A = {
   'modal-save-dests'(){ const m=V.modal; let n=0; for(const [cid,r] of Object.entries(m.rows)){ if(r.on){ newDest(m.campaignId,cid,r.date,r.time,r.assigneeId||false); n++; } } V.modal=null; render(true); toast(`Added ${n} destination${n===1?'':'s'}`); },
   'delete-campaign'(el){ const c=S.campaigns[el.dataset.id]; confirmBox('Delete this campaign?', `"${c.title}" and its ${destsOf(c.id).length} destinations will be removed for everyone.`, ()=>{ removeCampaign(c.id); location.hash='campaigns'; }); },
   'delete-dest'(el){ const d=S.dests[el.dataset.id]; confirmBox('Delete this destination?', `${channelById(d.channelId).name} for "${campOf(d).title}" will be removed for everyone.`, ()=>{ V.openDest=null; removeDest(d.id); }); },
+  'bulk-done'(el){
+    const cid=el.dataset.chan, day=el.dataset.date, [a,b]=V.calRange||[];
+    const list=filteredDests().filter(d=>d.channelId===cid && !isSocialDest(d) && !isDone(d) && (day ? d.date===day : (d.date>=a && d.date<=b)));
+    if(!list.length) return; const ch=channelById(cid);
+    const when=day ? fmtD(day,{weekday:'long',month:'long',day:'numeric'}) : 'in this view';
+    confirmBox(`Mark ${list.length} ${ch.name} piece${list.length===1?'':'s'} done?`, `Every open ${ch.name} piece ${day?'on '+when:when} will be marked Done. You can change any of them back from the piece itself.`,
+      ()=>{ for(const d of list){ d.status='posted'; saveDest(d); } render(true); toast(`${list.length} ${ch.name} piece${list.length===1?'':'s'} marked done`); }, 'Mark done'); },
   'set-status'(el){ const d=S.dests[el.dataset.id]; if(!d) return; d.status=el.dataset.status; saveDest(d); render(true); if(!isSocialDest(d) && d.status==='posted') toast('Marked done'); },
   'send-comment'(el){ sendComment(el.dataset.id); },
   'del-comment'(el){ const id=el.dataset.id, dest=el.dataset.dest;

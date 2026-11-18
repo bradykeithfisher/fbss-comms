@@ -499,3 +499,6 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 .cmt-b .tag{color:var(--rust);font-weight:600}
 .composer{display:flex;gap:8px;align-items:flex-end}
 .composer textarea{flex:1;min-height:44px}
+/* bulk "mark done" on the calendar */
+.bulkrow{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin:-4px 0 6px}
+.bulkday{color:var(--moss)}
