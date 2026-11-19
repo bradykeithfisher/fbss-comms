@@ -502,3 +502,5 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 /* bulk "mark done" on the calendar */
 .bulkrow{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin:-4px 0 6px}
 .bulkday{color:var(--moss)}
+.sectionlabel.row::after{order:1}
+.sectionlabel.row .bulkday{order:2;flex:none}

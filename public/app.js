@@ -548,6 +548,12 @@ function renderAdCal(c, ds){
 }
 
 /* ---------- my work ---------- */
+// Open tasks for a person that are overdue, due today, or both (not social posts, not ones with a posting error).
+function workDue(pid, scope){
+  const t=todayStr();
+  return Object.values(S.dests).filter(d=>!isDeclined(d.campaignId) && !(S.campaigns[d.campaignId]||{})._draft && (pid==='none'?!d.assigneeId:d.assigneeId===pid)
+    && !isDone(d) && !isSocialDest(d) && !d.publishError && d.date && (scope==='overdue'?d.date<t:scope==='today'?d.date===t:d.date<=t));
+}
 function renderWork(){
   const m=me(); let pid=V.workPerson || (m&&m.id) || '';
   let h=`<div class="pagehead"><div><h1>My work</h1><div class="sub">Sorted by due date: the day each item is scheduled to go out.</div></div><div class="row"><label class="small muted" for="w-person">Showing</label><select class="compact" id="w-person" data-ui="workPerson">${memberOptions(pid,false)}<option value="none" ${pid==='none'?'selected':''}>Unassigned</option></select></div></div>`;
@@ -556,7 +562,12 @@ function renderWork(){
   const t=todayStr(), wk=ymd(addDays(new Date(),7)); const open=mine.filter(d=>!isDone(d)); const ok=d=>!d.publishError;
   const groups=[['Needs attention',open.filter(d=>d.publishError)],['Overdue',open.filter(d=>ok(d)&&when(d)&&when(d)<t)],['Due today',open.filter(d=>ok(d)&&when(d)===t)],['Next 7 days',open.filter(d=>ok(d)&&when(d)>t&&when(d)<=wk)],['Later',open.filter(d=>ok(d)&&(!when(d)||when(d)>wk))],['Done recently',mine.filter(isDone).reverse().slice(0,10)]];
   if(!mine.length) h+=`<div class="empty"><img src="/assets/mark-color.svg" alt="">Nothing assigned yet.</div>`;
-  for(const [g,items] of groups){ if(!items.length) continue; h+=`<div class="sectionlabel">${g} · ${items.length}</div><div class="dlist">${items.map(d=>drow(d,true)).join('')}</div>`; }
+  // Overdue and due-today tasks can be marked done in one go (social posts are marked Posted when they go out).
+  const scopeOf={'Overdue':'overdue','Due today':'today'};
+  const nTasks=g=>workDue(pid,g).length, both=nTasks('both');
+  if(both && nTasks('overdue') && nTasks('today')) h+=`<div class="row" style="justify-content:flex-end;margin:-6px 0 4px"><button class="btn sm" data-action="work-done" data-scope="both" data-person="${esc(pid)}">✓ Mark all overdue and due today done (${both})</button></div>`;
+  for(const [g,items] of groups){ if(!items.length) continue; const sc=scopeOf[g], n=sc?nTasks(sc):0;
+    h+=`<div class="sectionlabel row" style="gap:10px"><span>${g} · ${items.length}</span>${n?`<button class="btn ghost sm bulkday" data-action="work-done" data-scope="${sc}" data-person="${esc(pid)}">✓ Mark ${n===items.length?'all':n+(n===1?' task':' tasks')} done</button>`:''}</div><div class="dlist">${items.map(d=>drow(d,true)).join('')}</div>`; }
   return h;
 }
 
@@ -1048,6 +1059,11 @@ const A = {
   'modal-save-dests'(){ const m=V.modal; let n=0; for(const [cid,r] of Object.entries(m.rows)){ if(r.on){ newDest(m.campaignId,cid,r.date,r.time,r.assigneeId||false); n++; } } V.modal=null; render(true); toast(`Added ${n} destination${n===1?'':'s'}`); },
   'delete-campaign'(el){ const c=S.campaigns[el.dataset.id]; confirmBox('Delete this campaign?', `"${c.title}" and its ${destsOf(c.id).length} destinations will be removed for everyone.`, ()=>{ removeCampaign(c.id); location.hash='campaigns'; }); },
   'delete-dest'(el){ const d=S.dests[el.dataset.id]; confirmBox('Delete this destination?', `${channelById(d.channelId).name} for "${campOf(d).title}" will be removed for everyone.`, ()=>{ V.openDest=null; removeDest(d.id); }); },
+  'work-done'(el){
+    const sc=el.dataset.scope, list=workDue(el.dataset.person, sc); if(!list.length) return;
+    const what={overdue:'overdue', today:'due today', both:'overdue or due today'}[sc];
+    confirmBox(`Mark ${list.length} task${list.length===1?'':'s'} done?`, `Every task ${what} on this list will be marked Done. You can change any of them back from the task itself.`,
+      ()=>{ for(const d of list){ d.status='posted'; saveDest(d); } render(true); toast(`${list.length} task${list.length===1?'':'s'} marked done`); }, 'Mark done'); },
   'bulk-done'(el){
     const cid=el.dataset.chan, day=el.dataset.date, [a,b]=V.calRange||[];
     const list=filteredDests().filter(d=>d.channelId===cid && !isSocialDest(d) && !isDone(d) && (day ? d.date===day : (d.date>=a && d.date<=b)));
