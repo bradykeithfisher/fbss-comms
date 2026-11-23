@@ -738,7 +738,7 @@ function renderDrawer(){
       </div>
       <span class="small muted">Due on the day it's scheduled to go out. ${d.assigneeId?`${esc((memberById(d.assigneeId)||{}).name||'They')} gets an email when assigned and a reminder that morning.`:'Pick someone to email them the assignment. They get a reminder that morning.'}</span>
     </div>
-    <div class="field"><span class="lbl">Status</span><div class="statusseg" role="group" aria-label="Status">${statusesFor(d).map(([v,l])=>`<button class="st-${stClass(d,v)} ${cur===v?'on':''}" data-action="set-status" data-id="${id}" data-status="${v}" aria-pressed="${cur===v}"><span class="sdot"></span>${l}</button>`).join('')}</div>${isSocialDest(d)?`<span class="small muted" style="margin-top:6px">Social posts need to be <strong>Approved</strong> before they can post automatically.</span>`:''}</div>
+    <div class="field"><span class="lbl">Status</span><div class="statusseg" role="group" aria-label="Status">${statusesFor(d).map(([v,l])=>`<button class="st-${stClass(d,v)} ${cur===v?'on':''}" data-action="set-status" data-id="${id}" data-status="${v}" aria-pressed="${cur===v}"><span class="sdot"></span>${l}</button>`).join('')}</div>${isSocialDest(d)?`<span class="small muted" style="margin-top:6px">Mark it <strong>Scheduled</strong> when it’s ready. Scheduled posts go out automatically at their date and time.</span>`:''}</div>
     ${ch.kind==='email'&&CFG&&CFG.newsletter?`<div class="small muted" style="margin:-8px 0 -6px">Goes into the Weekly Update in the Newsletter Studio automatically: the subject line becomes the title, and the copy and first photo are added too.</div>`:''}
     ${k.head?`<div class="field"><label class="lbl" for="d-head-${id}">${k.head}</label><input type="text" id="d-head-${id}" data-bind="dest:headline" data-id="${id}" value="${esc(d.headline)}"></div>`:''}
     <div class="field">
@@ -750,6 +750,11 @@ function renderDrawer(){
     <div class="field"><span class="lbl">Photos or video for this destination</span>
       <div class="photos">${imgs.map(p=>`<div class="photo ${isVideo(p)?'vid':''}"><a href="${esc(fileUrl(p))}" target="_blank" rel="noopener" aria-label="Open full size"></a>${mediaTag(p)}<button class="x" data-action="remove-photo" data-id="${id}" data-img="${esc(p)}" aria-label="Remove">×</button></div>`).join('')}
       <label class="addphoto" for="up-${id}">+ Add photos<br>or video</label><input type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple class="sr" id="up-${id}" data-upload="dest:${id}"></div>
+      ${k.social&&!c.oneOff?(()=>{ if(!gfxLoaded[d.campaignId]){ gfxLoaded[d.campaignId]=true; setTimeout(()=>gfxRefresh(d.campaignId),0); }
+        const jobs=gfxPostJobs(d.campaignId,id).filter(j=>j.status!=='done');
+        return `<div class="row" style="gap:8px;margin-top:8px"><button class="btn gold sm" data-action="gfx-post-open" data-id="${id}">✦ Generate image</button><span class="small muted">A new image in the style of this campaign's graphics</span></div>
+          ${jobs.map(j=>`<div class="gjob" style="margin-top:6px"><div style="min-width:0;flex:1"><div class="gj-t">AI image: ${esc(String(j.options.prompt||'').slice(0,60))}${String(j.options.prompt||'').length>60?'…':''}</div><div class="small muted">${gfxStatus(j)}</div></div>
+            ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('')}`; })():''}
       ${k.social&&imgs.some(isVideo)&&imgs.length>1?`<span class="small" style="color:var(--bad);margin-top:6px">A video post can have just the one video. Remove the other items, or split them into separate posts.</span>`:''}
       ${k.social&&imgs.some(isVideo)?`<span class="small muted" style="margin-top:6px">Video posts go to Facebook as a Page video and to Instagram as a Reel. Vertical (9:16) MP4 works best. Max ${maxMb()} MB.</span>`:''}
       ${!imgs.length&&c.coverPath?`<span class="small muted" style="margin-top:6px">Using the campaign's key art until you add a photo here.</span>`:''}
@@ -820,6 +825,7 @@ function renderModal(){
   if(m.type==='confirm') return wrap(`<h2 id="m-t">${esc(m.title)}</h2><p class="prose" style="margin:0">${esc(m.body)}</p><div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="confirm-yes">${esc(m.yes||'Delete')}</button></div>`);
   if(m.type==='graphics') return wrap(renderGfxModal(m), 560);
   if(m.type==='gfx-review') return wrap(renderGfxReview(m), 980);
+  if(m.type==='gfx-post') return wrap(renderGfxPost(m), 640);
   if(m.type==='gfx-approve') return wrap(renderGfxApprove(m), 560);
   if(m.type==='change-pw') return wrap(`<h2 id="m-t">Change password</h2><form class="stack" data-form="change-pw" style="gap:12px"><div class="field"><label class="lbl" for="cp-1">New password</label><input type="password" id="cp-1" autocomplete="new-password" minlength="8" required></div><div class="field"><label class="lbl" for="cp-2">Confirm</label><input type="password" id="cp-2" autocomplete="new-password" minlength="8" required></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-action="modal-close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
   if(m.type==='pick-campaign'){
@@ -1001,6 +1007,17 @@ const A = {
   'pick-channel'(el){ const m=V.modal; if(m.then==='campaign'){ V.modal={type:'pick-campaign', channelId:el.dataset.id, date:m.date}; render(true); return; } const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
   'add-dests'(el){ openAddDests(el.dataset.id); },
   'modal-close'(){ V.modal=null; render(true); },
+  'gfx-post-open'(el){ const d=S.dests[el.dataset.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return;
+    const last=gfxPostJobs(c.id,d.id).slice(-1)[0]; const o=(last&&last.options)||{};
+    const imgs=(c.files||[]).filter(isImgFile); const def=o.refs||(c.coverPath&&imgs.some(f=>f.path===c.coverPath)?[c.coverPath]:imgs.slice(0,1).map(f=>f.path));
+    V.modal={type:'gfx-post', id:d.id, refs:def, shape:o.shape||'feed', prompt:''}; render(true); setTimeout(()=>{ const t=document.getElementById('gp-prompt'); if(t) t.focus(); },50); },
+  async 'gfx-post-go'(){ const m=V.modal; if(!m||V.busy) return; const d=S.dests[m.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return;
+    m.prompt=document.getElementById('gp-prompt').value.trim(); m.shape=document.getElementById('gp-shape').value;
+    if(!m.prompt){ toast('Describe what the image should show or say'); document.getElementById('gp-prompt').focus(); return; }
+    V.busy=true; render(true);
+    try{ await gfxStart(c.id,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), shape:m.shape, prompt:m.prompt, text:{title:c.title}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
+    catch(e){ toast(e.message||'Could not start'); }
+    V.busy=false; render(true); },
   'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'auto', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
   async 'gfx-go'(){ const m=V.modal; if(!m||V.busy) return; const c=S.campaigns[m.id];
     const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim(), title=document.getElementById('gf-name').value.trim();
@@ -1195,6 +1212,12 @@ async function sendComment(destId){
   V.sendingComment=false; render(true);
   const again=document.getElementById('cm-'+destId); if(again) again.focus();
 }
+// Picking campaign graphics in the Generate image dialog (no redraw, so the typed prompt stays).
+document.addEventListener('change', e=>{ const el=e.target; if(!(el.dataset&&el.dataset.gfxRef) || !V.modal || V.modal.type!=='gfx-post') return;
+  const refs=V.modal.refs, p=el.dataset.gfxRef;
+  if(el.checked){ if(refs.length>=4){ el.checked=false; toast('Pick up to 4 images'); return; } if(!refs.includes(p)) refs.push(p); }
+  else V.modal.refs=refs.filter(x=>x!==p);
+  el.closest('.ref').classList.toggle('on', el.checked); });
 document.addEventListener('keydown', e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&e.target.dataset&&e.target.dataset.comment){ e.preventDefault(); sendComment(e.target.dataset.comment); } });
 
 /* ---------- forms ---------- */
@@ -1310,6 +1333,7 @@ const gfxLabel=j=> j.kind==='concept' ? `Concept ${(j.options&&j.options.variati
 const gfxJobs=cid=>Object.values(S.gjobs).filter(j=>j.campaign_id===cid).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
 const gfxAge=j=>Date.now()-Date.parse(j.updated_at||j.created_at||0);
 const gfxStuck=j=>((j.status==='queued'||j.status==='working')&&gfxAge(j)>6*60e3) || (j.status==='composing'&&gfxAge(j)>3*60e3);
+const gfxPostJobs=(cid,destId)=>gfxJobs(cid).filter(j=>j.options&&j.options.post&&j.options.destId===destId);
 const gfxBusy=j=>(j.kind==='concept' ? ['queued','working'] : ['queued','working','art','composing']).includes(j.status) && !gfxStuck(j);
 // The current round of concepts: the newest batch that hasn't had one chosen yet.
 function gfxRound(cid){
@@ -1341,7 +1365,7 @@ function renderGfxPanel(c){
   if(c._draft) return `<div class="field"><span class="lbl">AI graphics</span><span class="small muted">Submit the campaign first, then you can design graphics for it.</span></div>`;
   if(!gfxLoaded[c.id]){ gfxLoaded[c.id]=true; gfxRefresh(c.id); }
   const round=gfxRound(c.id), chosen=gfxChosen(c.id);
-  const outs=gfxJobs(c.id).filter(j=>j.kind!=='concept');
+  const outs=gfxJobs(c.id).filter(j=>j.kind!=='concept' && !(j.options&&j.options.post));
   let h='';
   if(round){
     const ready=round.list.filter(j=>j.status==='art').length;
@@ -1383,6 +1407,20 @@ function gfxPickHtml(m){
 function gfxReadPick(){
   const pick=k=>document.getElementById('gf-'+k).checked; const n=id=>Math.min(6,Math.max(1,parseInt(document.getElementById(id).value,10)||1));
   return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?n('gf-count'):0, socialD:pick('socialD')?n('gf-countD'):0 };
+}
+function renderGfxPost(m){
+  const d=S.dests[m.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return '';
+  const imgs=(c.files||[]).filter(f=>isImgFile(f)&&f.w!==-1);
+  return `<h2 id="m-t">Generate an image</h2><p class="prose" style="margin:0">For this ${esc(channelById(d.channelId).name)} post about ${esc(c.title)}.</p>
+    <div class="field"><span class="lbl">Match these campaign graphics</span>
+      ${imgs.length?`<div class="refpick">${imgs.map(f=>`<label class="ref ${m.refs.includes(f.path)?'on':''}" title="${esc(f.name)}"><input type="checkbox" class="sr" data-gfx-ref="${esc(f.path)}" ${m.refs.includes(f.path)?'checked':''}><img src="${esc(fileUrl(f.path))}" alt="${esc(f.name)}" loading="lazy"></label>`).join('')}</div>
+      <span class="small muted">Pick up to 4. The new image uses their lettering, colors and look.</span>`
+      :`<span class="small muted">This campaign has no images yet, so the image will be designed from your description alone. Add graphics to Campaign files (or use Design graphics) to match a look.</span>`}</div>
+    <div class="field"><label class="lbl" for="gp-prompt">What should it show or say?</label><textarea id="gp-prompt" rows="4" placeholder="e.g. Add &quot;Register by Dec 13&quot; in the same lettering, with a countdown feel">${esc(m.prompt||'')}</textarea>
+      <span class="small muted">Put any words you want on the image in quotes, spelled exactly.</span></div>
+    <div class="field"><label class="lbl" for="gp-shape">Shape</label><select id="gp-shape">${[['feed','Feed post · 4 × 5'],['square','Square · 1 × 1'],['story','Story or Reel cover · 9 × 16']].map(([v,l])=>`<option value="${v}" ${m.shape===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    <p class="small muted" style="margin:0">Made by OpenAI in a minute or two and added to this post's photos. Check spelling before posting. Each image costs a few cents.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-post-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Generate image'}</button></div>`;
 }
 function renderGfxReview(m){
   const c=S.campaigns[m.id]; const round=c&&gfxRound(m.id); if(!round) return `<h2 id="m-t">Design concepts</h2><p class="prose">These concepts are no longer waiting for a choice.</p><div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Close</button></div>`;
@@ -1449,9 +1487,11 @@ async function gfxRefresh(cid){
   render(); gfxSchedule();
   gfxCompose();
 }
+// Graphics work for the campaign on screen: the campaign page, or the campaign of the post that's open.
+const gfxActiveCid=()=> (V.view==='campaign'&&V.campaignId) || (V.openDest&&S.dests[V.openDest]&&S.dests[V.openDest].campaignId) || '';
 function gfxSchedule(){
   clearTimeout(gfxTimer);
-  const cid=V.view==='campaign'&&V.campaignId; if(!cid) return;
+  const cid=gfxActiveCid(); if(!cid) return;
   if(gfxJobs(cid).some(gfxBusy)) gfxTimer=setTimeout(()=>gfxRefresh(cid), 4000);
 }
 async function gfxCall(jobId){
@@ -1477,7 +1517,7 @@ async function gfxStart(cid, list){
 }
 // Finish any deliverable whose artwork is ready: claim it, add the text, upload, and attach to the campaign.
 async function gfxCompose(){
-  if(gfxComposing) return; const cid=V.view==='campaign'&&V.campaignId; if(!cid) return;
+  if(gfxComposing) return; const cid=gfxActiveCid(); if(!cid) return;
   const j=gfxJobs(cid).find(x=>x.kind!=='concept' && (x.status==='art' || (x.status==='composing'&&gfxAge(x)>3*60e3))); if(!j) return;
   gfxComposing=true;
   try{
@@ -1490,6 +1530,16 @@ async function gfxCompose(){
     if(j.kind==='title'||j.kind==='wide') made.push([`${base} - Title 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
     if(j.kind==='background') made.push([`${base} - Background 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
     if(j.kind==='social') made.push([`${base} - Social 4x5${j.options.variation>1?' ('+j.options.variation+')':''}.jpg`, await GFX.makeImage(art,1080,1350)]);
+    if(j.options.post){
+      const d=S.dests[j.options.destId]; if(!d) throw new Error('That post no longer exists.');
+      const [w,h]={square:[1080,1080],story:[1080,1920]}[j.options.shape]||[1080,1350];
+      const blob=await GFX.makeImage(art,w,h); const path=`photos/${d.id}/${uid()}.jpg`;
+      const { error } = await sb.storage.from('files').upload(path, blob, { contentType:'image/jpeg', upsert:false }); if(error) throw error;
+      d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d);
+      const { data:done } = await sb.from('graphics_jobs').update({ status:'done', outputs:[{path,name:'Post image'}], updated_at:new Date().toISOString() }).eq('id',j.id).select();
+      if(done&&done[0]) S.gjobs[j.id]=done[0];
+      toast('New image added to the post'); return;
+    }
     const outputs=[];
     for(const [name, blob] of made){
       const path=`campaigns/${cid}/${uid().slice(0,8)}-${safeName(name)}`;

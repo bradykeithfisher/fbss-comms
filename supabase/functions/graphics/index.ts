@@ -78,7 +78,23 @@ function wordsFor(kind: string, opts: Record<string, any>, t: Record<string, str
     `No other words, letters or numbers anywhere. No logos, no watermarks, no made-up text.`,
   ];
 }
+// Custom images for one social post: staff pick the campaign images to match and describe what they want.
+export const POST_SIZES: Record<string, [number, number]> = { feed: [1088, 1360], square: [1216, 1216], story: [1152, 2048] };
+const POST_SHAPE: Record<string, string> = { feed: 'a vertical 4:5 feed post', square: 'a square 1:1 post', story: 'a tall 9:16 story' };
+function postPrompt(camp: Record<string, string>, opts: Record<string, any>) {
+  const refs = Array.isArray(opts.refs) && opts.refs.length;
+  return [
+    refs ? `The attached image${opts.refs.length > 1 ? 's are' : ' is'} this event's existing graphics. Make a new image that clearly belongs to the same set: the same lettering style, colors, imagery and textures.` : '',
+    `Create ${POST_SHAPE[opts.shape] || POST_SHAPE.feed} for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas, to post on Facebook and Instagram. Polished, professional church media design.`,
+    `Event: ${(opts.text && opts.text.title) || camp.title || 'Church event'}.`,
+    `What to make (from the church staff; follow this closely): ${String(opts.prompt || '').slice(0, 1500)}`,
+    `Spell any words exactly as the staff wrote them. Beyond the words they asked for and the event title, add no other words. No logos or watermarks unless asked.`,
+    `Keep words large and readable on a phone, with comfortable margins.`,
+    `If people appear, show them from behind, in silhouette or at a distance, with no close-up faces.`,
+  ].filter(Boolean).join('\n');
+}
 export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, any>) {
+  if (opts.post) return postPrompt(camp, opts);
   const t = (opts.text || {}) as Record<string, string>;
   if (!t.title) t.title = camp.title || 'Church event';
   if (kind === 'background') {
@@ -128,8 +144,8 @@ function b64ToBytes(b64: string) {
 
 export const publicFileUrl = (path: string) => `${URL_()}/storage/v1/object/public/files/${path.split('/').map(encodeURIComponent).join('/')}`;
 export async function makeArt(job: Record<string, any>, camp: Record<string, string>) {
-  const [w, h] = SIZES[job.kind] || SIZES.social;
   const opts = job.options || {};
+  const [w, h] = opts.post ? (POST_SIZES[opts.shape] || POST_SIZES.feed) : (SIZES[job.kind] || SIZES.social);
   const req: Record<string, unknown> = {
     model: env('OPENAI_IMAGE_MODEL') || 'gpt-image-2',
     prompt: buildPrompt(job.kind, camp, opts),
@@ -140,8 +156,9 @@ export async function makeArt(job: Record<string, any>, camp: Record<string, str
     n: 1,
   };
   // With an approved concept, ask for the same artwork in this shape (image edit with the concept as reference).
-  if (opts.ref) req.images = [{ image_url: publicFileUrl(String(opts.ref)) }];
-  const res = await fetch(`https://api.openai.com/v1/images/${opts.ref ? 'edits' : 'generations'}`, {
+  const refs = opts.post ? (Array.isArray(opts.refs) ? opts.refs.slice(0, 4).map(String) : []) : (opts.ref ? [String(opts.ref)] : []);
+  if (refs.length) req.images = refs.map((p) => ({ image_url: publicFileUrl(p) }));
+  const res = await fetch(`https://api.openai.com/v1/images/${refs.length ? 'edits' : 'generations'}`, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + OPENAI_KEY(), 'content-type': 'application/json' },
     body: JSON.stringify(req),
