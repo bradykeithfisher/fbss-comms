@@ -81,13 +81,13 @@ function wordsFor(kind: string, opts: Record<string, any>, t: Record<string, str
 // First Baptist house style, from the FBSS Brand Guide.
 export const FBSS_STYLE = `First Baptist Sulphur Springs house style (from the church's brand guide): calm, refined and warm, never loud. Warm cream (#EFE9DB) backgrounds or deep slate blue (#414A55) panels, with accents in rust (#91412D), gold (#B47E3D), moss green (#8C9077) and dusty blue (#ACBABD). Titles in an elegant classical serif set in ALL CAPS with wide letter spacing; small all-caps sans-serif subheads with wide spacing; a Baskerville-style serif for any smaller text. Generous empty space, thin hairline rules, clean alignment and minimal ornament. Optional faint tone-on-tone line art of stained-glass arches or a simple three-leaf motif. Photography, if used, is warm and natural with soft light. The feeling is welcoming, gospel-focused, authentic and unified. Do not draw the church logo.`;
 // Custom images for one social post: staff pick the campaign images to match and describe what they want.
-export const POST_SIZES: Record<string, [number, number]> = { feed: [1088, 1360], square: [1216, 1216], story: [1152, 2048] };
-const POST_SHAPE: Record<string, string> = { feed: 'a vertical 4:5 feed post', square: 'a square 1:1 post', story: 'a tall 9:16 story' };
+export const POST_SIZES: Record<string, [number, number]> = { feed: [1088, 1360], square: [1216, 1216], story: [1152, 2048], wide: [2048, 1152] };
+const POST_SHAPE: Record<string, string> = { feed: 'a vertical 4:5 feed post', square: 'a square 1:1 post', story: 'a tall 9:16 story', wide: 'a wide 16:9 image' };
 function postPrompt(camp: Record<string, string>, opts: Record<string, any>) {
   const refs = Array.isArray(opts.refs) && opts.refs.length;
   return [
     refs ? `The attached image${opts.refs.length > 1 ? 's are' : ' is'} this event's existing graphics. Make a new image that clearly belongs to the same set: the same lettering style, colors, imagery and textures.` : '',
-    `Create ${POST_SHAPE[opts.shape] || POST_SHAPE.feed} for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas, to post on Facebook and Instagram. Polished, professional church media design.`,
+    `Create ${POST_SHAPE[opts.shape] || POST_SHAPE.feed} for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas, to post on social media. Polished, professional church media design.`,
     `Event: ${(opts.text && opts.text.title) || camp.title || 'Church event'}.`,
     opts.style === 'fbss' ? `Style: ${FBSS_STYLE}` : '',
     `What to make (from the church staff; follow this closely): ${String(opts.prompt || '').slice(0, 1500)}`,

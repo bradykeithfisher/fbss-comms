@@ -1432,7 +1432,7 @@ function renderGfxPost(m){
       :`<span class="small muted">${c?'This campaign has no images yet, so the image will be designed from your description alone. Add graphics to Campaign files (or use Design graphics) to match a look.':'No photos to match yet, so the image will be designed from your description and the style above.'}</span>`}</div>
     <div class="field"><label class="lbl" for="gp-prompt">What should it show or say?</label><textarea id="gp-prompt" rows="4" placeholder="e.g. Add &quot;Register by Dec 13&quot; in the same lettering, with a countdown feel">${esc(m.prompt||'')}</textarea>
       <span class="small muted">Put any words you want on the image in quotes, spelled exactly.</span></div>
-    <div class="field"><label class="lbl" for="gp-shape">Shape</label><select id="gp-shape">${[['feed','Feed post · 4 × 5'],['square','Square · 1 × 1'],['story','Story or Reel cover · 9 × 16']].map(([v,l])=>`<option value="${v}" ${m.shape===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label class="lbl" for="gp-shape">Shape</label><select id="gp-shape">${[['feed','Feed post · 4 × 5'],['square','Square · 1 × 1'],['story','Story or Reel cover · 9 × 16'],['wide','Wide · 16 × 9']].map(([v,l])=>`<option value="${v}" ${m.shape===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <p class="small muted" style="margin:0">Made by OpenAI in a minute or two and added to this post's photos. Check spelling before posting. Each image costs a few cents.</p>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-post-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Generate image'}</button></div>`;
 }
@@ -1554,7 +1554,7 @@ async function gfxCompose(){
     const art0=fileUrl(j.art_path);
     if(j.options.post){
       const d=S.dests[j.options.destId]; if(!d) throw new Error('That post no longer exists.');
-      const [w,h]={square:[1080,1080],story:[1080,1920]}[j.options.shape]||[1080,1350];
+      const [w,h]={square:[1080,1080],story:[1080,1920],wide:[1920,1080]}[j.options.shape]||[1080,1350];
       const blob=await GFX.makeImage(art0,w,h); const path=`photos/${d.id}/${uid()}.jpg`;
       const { error } = await sb.storage.from('files').upload(path, blob, { contentType:'image/jpeg', upsert:false }); if(error) throw error;
       d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d);
