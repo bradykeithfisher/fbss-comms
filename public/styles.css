@@ -205,6 +205,7 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
 @media (max-width:700px){.adcal .aday{min-height:70px;padding:3px}.adcal .chip .t{display:none}.adcal .chip{justify-content:center;padding:3px}}
 
 /* ---------- drawer & modal ---------- */
+.dback{display:none!important}
 .scrim{position:fixed;inset:0;background:rgba(46,52,60,.45);z-index:40}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(600px,100%);background:var(--surface);z-index:41;overflow-y:auto;box-shadow:-14px 0 44px rgba(0,0,0,.2);display:flex;flex-direction:column}
 .dhead{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--cream);z-index:2}
@@ -430,8 +431,11 @@ select.compact{width:auto;padding:7px 9px;font-size:14px}
   .palette{display:none}
   .footbar{gap:8px}
 
-  /* drawer & modals */
-  .drawer{width:100%}
+  /* drawer & modals: the post panel stops above the bottom toolbar so it stays usable, with a Back button */
+  .drawer{width:100%;bottom:var(--tabbar-h,0px)}
+  .scrim{bottom:var(--tabbar-h,0px)}
+  .dback{display:inline-flex!important;margin-right:2px;padding-left:6px;padding-right:8px}
+  .dhead .iconbtn[data-action="close-drawer"]{display:none}
   .dhead{padding:max(12px,env(safe-area-inset-top)) 14px 12px}
   .dbody{padding:16px 14px calc(24px + env(safe-area-inset-bottom));gap:18px}
   .modalwrap{padding:0;place-items:end stretch}

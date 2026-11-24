@@ -288,6 +288,7 @@ function render(force){
   app.className='shell';
   app.innerHTML = renderHeader() + `<main>${renderView()}</main>` + renderBottomTabs();
   const mn2=app.querySelector('main'); if(mn2&&mainScroll) mn2.scrollTop=mainScroll;
+  { const tb=app.querySelector('.bottomtabs'); const h=tb&&getComputedStyle(tb).display!=='none'?tb.offsetHeight:0; document.documentElement.style.setProperty('--tabbar-h', h+'px'); }
   ov.innerHTML = renderDrawer() + renderModal();
   const d2=document.querySelector('.drawer'); if(d2) d2.scrollTop=dScroll;
   const m2=document.querySelector('.modal'); if(m2) m2.scrollTop=mScroll;
@@ -721,7 +722,7 @@ function renderDrawer(){
   const a=aiState(id); const len=(d.copy||'').length; const imgs=d.imagePaths||[]; const cur=st(d); const s=settings();
   const previewImg = imgs[0] || c.coverPath;
   let html=`<div class="scrim" data-action="close-drawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(ch.name)} for ${esc(c.title)}">
-  <div class="dhead">${kb(ch,'lg')}<div style="flex:1;min-width:0"><div class="t">${esc(ch.name)}</div>${c.oneOff?`<span class="small muted">One-off post</span>`:`<a class="small" href="#campaign-${esc(d.campaignId)}">${esc(c.title)}</a>`}</div><button class="btn ghost iconbtn" data-action="close-drawer" aria-label="Close">✕</button></div>
+  ${fillAnnouncement(d)?(setTimeout(()=>saveDest(d),0),''):''}<div class="dhead"><button class="btn ghost sm dback" data-action="close-drawer" aria-label="Back">← Back</button>${kb(ch,'lg')}<div style="flex:1;min-width:0"><div class="t">${esc(ch.name)}</div>${c.oneOff?`<span class="small muted">One-off post</span>`:`<a class="small" href="#campaign-${esc(d.campaignId)}">${esc(c.title)}</a>`}</div><button class="btn ghost iconbtn" data-action="close-drawer" aria-label="Close">✕</button></div>
   <div class="dbody">
     ${c.oneOff?`<div class="field"><label class="lbl" for="d-title-${id}">Post title</label><input type="text" id="d-title-${id}" data-bind="dest:title" data-id="${id}" value="${esc(d.title)}" placeholder="e.g. Thanksgiving office hours, Sermon recap"></div>
     <div class="field"><label class="lbl" for="d-details-${id}">What's it about?</label><textarea id="d-details-${id}" data-bind="dest:details" data-id="${id}" rows="3" placeholder="The key facts. The AI writer uses this.">${esc(d.details)}</textarea></div>`:''}
@@ -903,10 +904,19 @@ function openAddDests(cid){
 
 /* ---------- actions ---------- */
 function defaultOwner(chId){ const o=channelById(chId).ownerId; return o && memberById(o) ? o : ''; }
+// Announcement destinations (e.g. the announcement video) start with the campaign description as their script,
+// and follow it while nobody has edited the script.
+const isAnnouncement = ch => !!ch && (ch.kind==='announcement' || /announc/i.test(ch.name||''));
+function fillAnnouncement(d){
+  const c=S.campaigns[d.campaignId]; if(!c||!c.description||(d.copy||'').trim()) return false;
+  if(!isAnnouncement(channelById(d.channelId))) return false;
+  d.copy=c.description; return true;
+}
 function newDest(campaignId, channelId, date, time, assigneeId, opts={}){
   const silent = opts.silent || isPending(campaignId);  // planned requests: email when approved
   const d={id:uid(), campaignId:campaignId||'', title:opts.title||'', details:'', channelId, date:date||'', time:time||'', assigneeId:(assigneeId===undefined||assigneeId===''||assigneeId===null)?defaultOwner(channelId):(assigneeId||''), status:'draft', headline:'', copy:'', notes:'', imagePaths:[], autoPublish:false, publishedAt:'', externalUrl:'', publishError:''};
   d.status = hasTime(channelId) ? 'draft' : 'scheduled';
+  fillAnnouncement(d);
   saveDest(d); if(d.assigneeId && !silent) notifyAssigned(d.id); return d;
 }
 // New campaigns are unsaved drafts until someone clicks "Submit campaign", so blank campaigns are never stored.
@@ -1262,6 +1272,7 @@ function onField(el, committed){
   else if(kind==='camp'){ const c=S.campaigns[id]; if(!c) return; const prev=c[field]; c[field]=val;
     if(field==='date' && val){ if(!c.endDate||c.endDate<val||c.endDate===prev) c.endDate=val; if(!c.adEnd||c.adEnd===prev) c.adEnd=c.endDate; }
     if(field==='endDate' && val && c.adEnd===prev) c.adEnd=val;
+    if(field==='description'){ for(const d of destsOf(id)) if(isAnnouncement(channelById(d.channelId)) && (!(d.copy||'').trim() || d.copy===prev)){ d.copy=val; saveDest(d, 700); } }
     saveCampaign(c, committed?0:700); if(committed && /date|time|adStart|adEnd/i.test(field)) render(true); }
   else if(kind==='set'){ settings()[field]=val; saveSettings(700); }
   else if(kind==='chan'){ const ch=settings().channels.find(c=>c.id===id); if(!ch) return; ch[field]=val; saveSettings(committed?0:700); if(committed) render(true); }
