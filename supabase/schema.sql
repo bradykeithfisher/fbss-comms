@@ -347,3 +347,8 @@ end $$;
 insert into public.destination_comments (destination_id, author_id, body, created_at)
 select d.id, null, d.notes, now() from public.destinations d
 where coalesce(trim(d.notes), '') <> '' and not exists (select 1 from public.destination_comments c where c.destination_id = d.id);
+
+-- =====================================================================
+-- Update 14: AI images for one-off social posts (no campaign).
+-- =====================================================================
+alter table public.graphics_jobs alter column campaign_id drop not null;

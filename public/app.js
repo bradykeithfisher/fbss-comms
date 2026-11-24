@@ -751,9 +751,9 @@ function renderDrawer(){
     <div class="field"><span class="lbl">Photos or video for this destination</span>
       <div class="photos">${imgs.map(p=>`<div class="photo ${isVideo(p)?'vid':''}"><a href="${esc(fileUrl(p))}" target="_blank" rel="noopener" aria-label="Open full size"></a>${mediaTag(p)}<button class="x" data-action="remove-photo" data-id="${id}" data-img="${esc(p)}" aria-label="Remove">×</button></div>`).join('')}
       <label class="addphoto" for="up-${id}">+ Add photos<br>or video</label><input type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple class="sr" id="up-${id}" data-upload="dest:${id}"></div>
-      ${k.social&&!c.oneOff?(()=>{ if(!gfxLoaded[d.campaignId]){ gfxLoaded[d.campaignId]=true; setTimeout(()=>gfxRefresh(d.campaignId),0); }
-        const jobs=gfxPostJobs(d.campaignId,id).filter(j=>j.status!=='done');
-        return `<div class="row" style="gap:8px;margin-top:8px"><button class="btn gold sm" data-action="gfx-post-open" data-id="${id}">✦ Generate image</button><span class="small muted">A new image in the style of this campaign's graphics</span></div>
+      ${k.social?(()=>{ const gk=d.campaignId||'one-off'; if(!gfxLoaded[gk]){ gfxLoaded[gk]=true; setTimeout(()=>gfxRefresh(d.campaignId||null),0); }
+        const jobs=gfxPostJobs(d.campaignId||null,id).filter(j=>j.status!=='done');
+        return `<div class="row" style="gap:8px;margin-top:8px"><button class="btn gold sm" data-action="gfx-post-open" data-id="${id}">✦ Generate image</button><span class="small muted">${c.oneOff?'Describe the image you want':'A new image in the style of this campaign\'s graphics'}</span></div>
           ${jobs.map(j=>`<div class="gjob" style="margin-top:6px"><div style="min-width:0;flex:1"><div class="gj-t">AI image: ${esc(String(j.options.prompt||'').slice(0,60))}${String(j.options.prompt||'').length>60?'…':''}</div><div class="small muted">${gfxStatus(j)}</div></div>
             ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('')}`; })():''}
       ${k.social&&imgs.some(isVideo)&&imgs.length>1?`<span class="small" style="color:var(--bad);margin-top:6px">A video post can have just the one video. Remove the other items, or split them into separate posts.</span>`:''}
@@ -1017,15 +1017,16 @@ const A = {
   'pick-channel'(el){ const m=V.modal; if(m.then==='campaign'){ V.modal={type:'pick-campaign', channelId:el.dataset.id, date:m.date}; render(true); return; } const d=newDest(m.campaignId, el.dataset.id, m.date, defaultTime(el.dataset.id), ''); V.modal=null; V.openDest=d.id; render(true); },
   'add-dests'(el){ openAddDests(el.dataset.id); },
   'modal-close'(){ V.modal=null; render(true); },
-  'gfx-post-open'(el){ const d=S.dests[el.dataset.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return;
-    const last=gfxPostJobs(c.id,d.id).slice(-1)[0]; const o=(last&&last.options)||{};
-    const imgs=(c.files||[]).filter(isImgFile); const def=o.refs||(c.coverPath&&imgs.some(f=>f.path===c.coverPath)?[c.coverPath]:imgs.slice(0,1).map(f=>f.path));
-    V.modal={type:'gfx-post', id:d.id, refs:def, shape:o.shape||'feed', prompt:''}; render(true); setTimeout(()=>{ const t=document.getElementById('gp-prompt'); if(t) t.focus(); },50); },
-  async 'gfx-post-go'(){ const m=V.modal; if(!m||V.busy) return; const d=S.dests[m.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return;
-    m.prompt=document.getElementById('gp-prompt').value.trim(); m.shape=document.getElementById('gp-shape').value;
+  'gfx-post-open'(el){ const d=S.dests[el.dataset.id]; if(!d) return; const c=S.campaigns[d.campaignId];
+    const last=gfxPostJobs(d.campaignId||null,d.id).slice(-1)[0]; const o=(last&&last.options)||{};
+    const imgs=c ? (c.files||[]).filter(isImgFile).map(f=>f.path) : (d.imagePaths||[]).filter(p=>!isVideo(p));
+    const def=o.refs||(c&&c.coverPath&&imgs.includes(c.coverPath)?[c.coverPath]:imgs.slice(0,1));
+    V.modal={type:'gfx-post', id:d.id, refs:def.filter(p=>imgs.includes(p)), shape:o.shape||'feed', style:o.style||'match', prompt:''}; render(true); setTimeout(()=>{ const t=document.getElementById('gp-prompt'); if(t) t.focus(); },50); },
+  async 'gfx-post-go'(){ const m=V.modal; if(!m||V.busy) return; const d=S.dests[m.id]; if(!d) return; const c=S.campaigns[d.campaignId];
+    m.prompt=document.getElementById('gp-prompt').value.trim(); m.shape=document.getElementById('gp-shape').value; m.style=document.getElementById('gp-style').value;
     if(!m.prompt){ toast('Describe what the image should show or say'); document.getElementById('gp-prompt').focus(); return; }
     V.busy=true; render(true);
-    try{ await gfxStart(c.id,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), shape:m.shape, prompt:m.prompt, text:{title:c.title}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
+    try{ await gfxStart(c?c.id:null,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), shape:m.shape, style:m.style, prompt:m.prompt, text:{title:c?c.title:(d.title||'')}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
   'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'auto', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
@@ -1337,7 +1338,7 @@ async function handleUpload(el){
    2) Staff review them, ask for another, and choose one. 3) The chosen concept is the title graphic; OpenAI
    adapts it into the background (words removed), poster and social posts. graphics.js saves the files.
    One row per image in graphics_jobs; the Supabase Edge Function "graphics" makes the artwork. */
-const GFX_STYLES=[['auto','Let the AI choose'],['photo','Photographic'],['illustrated','Illustrated'],['watercolor','Watercolor'],['textured','Textured, no people']];
+const GFX_STYLES=[['auto','Let the AI choose'],['fbss','First Baptist style'],['photo','Photographic'],['illustrated','Illustrated'],['watercolor','Watercolor'],['textured','Textured, no people']];
 const gfxLabel=j=> j.kind==='concept' ? `Concept ${(j.options&&j.options.variation)||1}${j.options&&j.options.direction?' · '+j.options.direction:''}` : j.kind==='poster' ? 'Poster · 36 × 42 in (PDF)'
   : (j.kind==='title'||j.kind==='wide') ? 'Title graphic · 16 × 9' : j.kind==='background' ? 'Background · 16 × 9'
   : `Social post${(j.options&&j.options.variation>1)?' '+j.options.variation:''}${j.options&&j.options.details?' · with details':''} · 4 × 5`;
@@ -1420,13 +1421,15 @@ function gfxReadPick(){
   return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?n('gf-count'):0, socialD:pick('socialD')?n('gf-countD'):0 };
 }
 function renderGfxPost(m){
-  const d=S.dests[m.id]; const c=d&&S.campaigns[d.campaignId]; if(!c) return '';
-  const imgs=(c.files||[]).filter(f=>isImgFile(f)&&f.w!==-1);
-  return `<h2 id="m-t">Generate an image</h2><p class="prose" style="margin:0">For this ${esc(channelById(d.channelId).name)} post about ${esc(c.title)}.</p>
-    <div class="field"><span class="lbl">Match these campaign graphics</span>
+  const d=S.dests[m.id]; if(!d) return ''; const c=S.campaigns[d.campaignId];
+  // Campaign posts match the campaign's images; one-off posts can match their own photos.
+  const imgs=c ? (c.files||[]).filter(f=>isImgFile(f)&&f.w!==-1) : (d.imagePaths||[]).filter(p=>!isVideo(p)).map(p=>({path:p,name:'Photo'}));
+  return `<h2 id="m-t">Generate an image</h2><p class="prose" style="margin:0">For this ${esc(channelById(d.channelId).name)} post about ${esc(c?c.title:(d.title||'a one-off post'))}.</p>
+    <div class="field"><label class="lbl" for="gp-style">Style</label><select id="gp-style"><option value="match" ${m.style!=='fbss'?'selected':''}>${imgs.length?'Match the images below':'Let the AI choose'}</option><option value="fbss" ${m.style==='fbss'?'selected':''}>First Baptist style (from our brand guide)</option></select></div>
+    <div class="field"><span class="lbl">${c?'Match these campaign graphics':'Match these photos'}</span>
       ${imgs.length?`<div class="refpick">${imgs.map(f=>`<label class="ref ${m.refs.includes(f.path)?'on':''}" title="${esc(f.name)}"><input type="checkbox" class="sr" data-gfx-ref="${esc(f.path)}" ${m.refs.includes(f.path)?'checked':''}><img src="${esc(fileUrl(f.path))}" alt="${esc(f.name)}" loading="lazy"></label>`).join('')}</div>
       <span class="small muted">Pick up to 4. The new image uses their lettering, colors and look.</span>`
-      :`<span class="small muted">This campaign has no images yet, so the image will be designed from your description alone. Add graphics to Campaign files (or use Design graphics) to match a look.</span>`}</div>
+      :`<span class="small muted">${c?'This campaign has no images yet, so the image will be designed from your description alone. Add graphics to Campaign files (or use Design graphics) to match a look.':'No photos to match yet, so the image will be designed from your description and the style above.'}</span>`}</div>
     <div class="field"><label class="lbl" for="gp-prompt">What should it show or say?</label><textarea id="gp-prompt" rows="4" placeholder="e.g. Add &quot;Register by Dec 13&quot; in the same lettering, with a countdown feel">${esc(m.prompt||'')}</textarea>
       <span class="small muted">Put any words you want on the image in quotes, spelled exactly.</span></div>
     <div class="field"><label class="lbl" for="gp-shape">Shape</label><select id="gp-shape">${[['feed','Feed post · 4 × 5'],['square','Square · 1 × 1'],['story','Story or Reel cover · 9 × 16']].map(([v,l])=>`<option value="${v}" ${m.shape===v?'selected':''}>${l}</option>`).join('')}</select></div>
@@ -1465,11 +1468,18 @@ const GFX_DIRECTIONS=[
   {name:'Paper cutout', brief:'Layered paper-cutout illustration with soft shadows; a chunky rounded title cut from paper, in bright but warm colors, centered.'},
   {name:'Watercolor wash', brief:'Loose watercolor washes and hand-drawn ink details; a brush-lettered title in deep color across the middle with lots of white space.'},
 ];
+const FBSS_STYLE_BRIEF='calm, refined and warm; cream or deep slate-blue backgrounds with rust, gold, moss and dusty-blue accents; elegant wide-spaced all-caps serif titles, small spaced all-caps sans subheads, Baskerville-style text; generous space, hairline rules, minimal ornament, faint stained-glass or three-leaf line art; warm natural photography.';
+const GFX_DIRECTIONS_FBSS=[
+  {name:'Cream and hairlines', brief:'Warm cream background with a wide-spaced all-caps serif title in slate blue, a thin gold hairline rule, and faint tone-on-tone stained-glass arch line art in one corner.'},
+  {name:'Slate panel and photo', brief:'A warm, natural photograph from the event\'s world on one side and a deep slate-blue panel on the other carrying the title in cream, wide-spaced all-caps serif, with a small rust accent.'},
+  {name:'Moss and gold still life', brief:'A soft, warmly lit still life of a few meaningful objects on cream linen, with the title set in a refined all-caps serif in moss green and gold, lots of open space.'},
+];
 async function gfxDirections(c, n, prior, style, notes, title){
   const used=prior.map(p=>p.name);
-  const fallback=()=>GFX_DIRECTIONS.filter(d=>!used.includes(d.name)).slice(0,n).concat(GFX_DIRECTIONS).slice(0,n);
+  const pool=style==='fbss'?GFX_DIRECTIONS_FBSS:GFX_DIRECTIONS; const fallback=()=>pool.filter(d=>!used.includes(d.name)).slice(0,n).concat(pool).slice(0,n);
   if(!(CFG&&CFG.aiEnabled)) return fallback();
-  const styleRule = style&&style!=='auto' ? `Every direction must use this imagery style: ${GFX_STYLES.find(x=>x[0]===style)[1]}. Make them differ completely in lettering style, layout, color palette and subject.`
+  const styleRule = style==='fbss' ? `Every direction must follow the First Baptist house style from the church's brand guide: ${FBSS_STYLE_BRIEF} Within that style, make the directions differ completely in layout, imagery, subject and which brand colors lead.`
+    : style&&style!=='auto' ? `Every direction must use this imagery style: ${GFX_STYLES.find(x=>x[0]===style)[1]}. Make them differ completely in lettering style, layout, color palette and subject.`
     : 'Make them differ completely in lettering style, layout, color palette, imagery and medium.';
   const prompt=`You are the art director for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas.
 Write ${n} design direction${n>1?'s':''} for an event graphic where the title lettering is designed into the artwork, like professional church media design.
@@ -1491,7 +1501,7 @@ Reply with only JSON: {"directions":[{"name":"2 to 4 word name","brief":"..."}]}
   }catch(e){ return fallback(); }
 }
 async function gfxRefresh(cid){
-  const { data, error } = await sb.from('graphics_jobs').select('*').eq('campaign_id',cid);
+  const q=sb.from('graphics_jobs').select('*'); const { data, error } = await (cid ? q.eq('campaign_id',cid) : q.is('campaign_id',null));
   if(error){ console.warn('graphics', error.message); return; }
   for(const k of Object.keys(S.gjobs)) if(S.gjobs[k].campaign_id===cid && !data.some(d=>d.id===k)) delete S.gjobs[k];
   for(const j of data) S.gjobs[j.id]=j;
@@ -1500,10 +1510,16 @@ async function gfxRefresh(cid){
 }
 // Graphics work for the campaign on screen: the campaign page, or the campaign of the post that's open.
 const gfxActiveCid=()=> (V.view==='campaign'&&V.campaignId) || (V.openDest&&S.dests[V.openDest]&&S.dests[V.openDest].campaignId) || '';
+// What's on screen: a campaign's jobs, or (for an open one-off post) the jobs with no campaign. null = nothing.
+function gfxActive(){
+  const cid=gfxActiveCid(); if(cid) return { cid, jobs:gfxJobs(cid) };
+  const d=V.openDest&&S.dests[V.openDest]; if(d&&!d.campaignId) return { cid:null, jobs:gfxPostJobs(null,d.id) };
+  return null;
+}
 function gfxSchedule(){
   clearTimeout(gfxTimer);
-  const cid=gfxActiveCid(); if(!cid) return;
-  if(gfxJobs(cid).some(gfxBusy)) gfxTimer=setTimeout(()=>gfxRefresh(cid), 4000);
+  const a=gfxActive(); if(!a) return;
+  if(a.jobs.some(gfxBusy)) gfxTimer=setTimeout(()=>gfxRefresh(a.cid), 4000);
 }
 async function gfxCall(jobId){
   const { data:{ session:s } } = await sb.auth.getSession();
@@ -1528,29 +1544,30 @@ async function gfxStart(cid, list){
 }
 // Finish any deliverable whose artwork is ready: claim it, add the text, upload, and attach to the campaign.
 async function gfxCompose(){
-  if(gfxComposing) return; const cid=gfxActiveCid(); if(!cid) return;
-  const j=gfxJobs(cid).find(x=>x.kind!=='concept' && (x.status==='art' || (x.status==='composing'&&gfxAge(x)>3*60e3))); if(!j) return;
+  if(gfxComposing) return; const a=gfxActive(); if(!a) return; const cid=a.cid;
+  const j=a.jobs.find(x=>x.kind!=='concept' && (x.status==='art' || (x.status==='composing'&&gfxAge(x)>3*60e3))); if(!j) return;
   gfxComposing=true;
   try{
     const { data:claimed } = await sb.from('graphics_jobs').update({ status:'composing', updated_at:new Date().toISOString() }).eq('id',j.id).eq('status',j.status).eq('updated_at',j.updated_at).select();
     if(!claimed || !claimed.length) return;
     S.gjobs[j.id]=claimed[0]; render();
-    const c=S.campaigns[cid]; const art=fileUrl(j.art_path); const base=safeTitle(c.title);
-    const made=[];
-    if(j.kind==='poster') made.push([`${base} - Poster 36x42.pdf`, await GFX.makePoster(art)]);
-    if(j.kind==='title'||j.kind==='wide') made.push([`${base} - Title 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
-    if(j.kind==='background') made.push([`${base} - Background 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
-    if(j.kind==='social') made.push([`${base} - Social 4x5${j.options.variation>1?' ('+j.options.variation+')':''}.jpg`, await GFX.makeImage(art,1080,1350)]);
+    const art0=fileUrl(j.art_path);
     if(j.options.post){
       const d=S.dests[j.options.destId]; if(!d) throw new Error('That post no longer exists.');
       const [w,h]={square:[1080,1080],story:[1080,1920]}[j.options.shape]||[1080,1350];
-      const blob=await GFX.makeImage(art,w,h); const path=`photos/${d.id}/${uid()}.jpg`;
+      const blob=await GFX.makeImage(art0,w,h); const path=`photos/${d.id}/${uid()}.jpg`;
       const { error } = await sb.storage.from('files').upload(path, blob, { contentType:'image/jpeg', upsert:false }); if(error) throw error;
       d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d);
       const { data:done } = await sb.from('graphics_jobs').update({ status:'done', outputs:[{path,name:'Post image'}], updated_at:new Date().toISOString() }).eq('id',j.id).select();
       if(done&&done[0]) S.gjobs[j.id]=done[0];
       toast('New image added to the post'); return;
     }
+    const c=S.campaigns[cid]; const art=fileUrl(j.art_path); const base=safeTitle(c.title);
+    const made=[];
+    if(j.kind==='poster') made.push([`${base} - Poster 36x42.pdf`, await GFX.makePoster(art)]);
+    if(j.kind==='title'||j.kind==='wide') made.push([`${base} - Title 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
+    if(j.kind==='background') made.push([`${base} - Background 16x9.jpg`, await GFX.makeImage(art,1920,1080)]);
+    if(j.kind==='social') made.push([`${base} - Social 4x5${j.options.variation>1?' ('+j.options.variation+')':''}.jpg`, await GFX.makeImage(art,1080,1350)]);
     const outputs=[];
     for(const [name, blob] of made){
       const path=`campaigns/${cid}/${uid().slice(0,8)}-${safeName(name)}`;

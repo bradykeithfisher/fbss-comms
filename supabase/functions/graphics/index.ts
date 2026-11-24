@@ -78,6 +78,8 @@ function wordsFor(kind: string, opts: Record<string, any>, t: Record<string, str
     `No other words, letters or numbers anywhere. No logos, no watermarks, no made-up text.`,
   ];
 }
+// First Baptist house style, from the FBSS Brand Guide.
+export const FBSS_STYLE = `First Baptist Sulphur Springs house style (from the church's brand guide): calm, refined and warm, never loud. Warm cream (#EFE9DB) backgrounds or deep slate blue (#414A55) panels, with accents in rust (#91412D), gold (#B47E3D), moss green (#8C9077) and dusty blue (#ACBABD). Titles in an elegant classical serif set in ALL CAPS with wide letter spacing; small all-caps sans-serif subheads with wide spacing; a Baskerville-style serif for any smaller text. Generous empty space, thin hairline rules, clean alignment and minimal ornament. Optional faint tone-on-tone line art of stained-glass arches or a simple three-leaf motif. Photography, if used, is warm and natural with soft light. The feeling is welcoming, gospel-focused, authentic and unified. Do not draw the church logo.`;
 // Custom images for one social post: staff pick the campaign images to match and describe what they want.
 export const POST_SIZES: Record<string, [number, number]> = { feed: [1088, 1360], square: [1216, 1216], story: [1152, 2048] };
 const POST_SHAPE: Record<string, string> = { feed: 'a vertical 4:5 feed post', square: 'a square 1:1 post', story: 'a tall 9:16 story' };
@@ -87,6 +89,7 @@ function postPrompt(camp: Record<string, string>, opts: Record<string, any>) {
     refs ? `The attached image${opts.refs.length > 1 ? 's are' : ' is'} this event's existing graphics. Make a new image that clearly belongs to the same set: the same lettering style, colors, imagery and textures.` : '',
     `Create ${POST_SHAPE[opts.shape] || POST_SHAPE.feed} for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas, to post on Facebook and Instagram. Polished, professional church media design.`,
     `Event: ${(opts.text && opts.text.title) || camp.title || 'Church event'}.`,
+    opts.style === 'fbss' ? `Style: ${FBSS_STYLE}` : '',
     `What to make (from the church staff; follow this closely): ${String(opts.prompt || '').slice(0, 1500)}`,
     `Spell any words exactly as the staff wrote them. Beyond the words they asked for and the event title, add no other words. No logos or watermarks unless asked.`,
     `Keep words large and readable on a phone, with comfortable margins.`,
@@ -109,8 +112,9 @@ export function buildPrompt(kind: string, camp: Record<string, string>, opts: Re
     opts.ref ? `The attached image is the approved design concept. Create the version described below of this same design: the same lettering style, colors, imagery, textures and overall look, re-laid-out for the new shape so it looks like part of the same set.` : '',
     `Design a finished, professional event graphic for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas. It should look like the work of a skilled church graphic designer: expressive, custom-feeling lettering that is part of the design, a strong hierarchy, and imagery that fits the event.`,
     `Event: ${t.title}.${desc ? ' About it: ' + desc : ''}`,
-    opts.brief ? `Design direction (follow this closely): ${String(opts.brief).slice(0, 900)}` : '',
-    !opts.brief && opts.style && opts.style !== 'auto' ? `Visual style: ${opts.style}.` : '',
+    opts.style === 'fbss' ? `Style: ${FBSS_STYLE}` : '',
+    opts.brief ? `Design direction (follow this closely${opts.style === 'fbss' ? ', within the house style' : ''}): ${String(opts.brief).slice(0, 900)}` : '',
+    !opts.brief && opts.style && opts.style !== 'auto' && opts.style !== 'fbss' ? `Visual style: ${opts.style}.` : '',
     opts.notes ? `Ideas from the church staff: ${String(opts.notes).slice(0, 600)}` : '',
     `Format: ${FORMAT[kind] || FORMAT.concept}`,
     ...wordsFor(kind, opts, t),
@@ -173,7 +177,7 @@ export async function makeArt(job: Record<string, any>, camp: Record<string, str
   }
   const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
   if (!b64) throw new Error('OpenAI did not return an image.');
-  const path = `campaigns/${job.campaign_id}/art/${job.id}.jpg`;
+  const path = job.campaign_id ? `campaigns/${job.campaign_id}/art/${job.id}.jpg` : `photos/${opts.destId || 'one-off'}/art/${job.id}.jpg`;
   const up = await fetch(`${URL_()}/storage/v1/object/files/${path}`, { method: 'POST', headers: svcHeaders({ 'content-type': 'image/jpeg', 'x-upsert': 'true' }), body: b64ToBytes(b64) });
   if (!up.ok) throw new Error(`Couldn't save the artwork (${up.status}).`);
   return path;
@@ -194,7 +198,8 @@ export async function handler(req: Request): Promise<Response> {
   const claimed = await rest(`graphics_jobs?id=eq.${id}&status=eq.queued`, { method: 'PATCH', body: JSON.stringify({ status: 'working', error: '', updated_at: new Date().toISOString() }) });
   const job = claimed && claimed[0];
   if (!job) return json({ error: 'That graphic is already being made.' }, 409);
-  const camps = await rest(`campaigns?id=eq.${job.campaign_id}&select=title,description`);
+  // One-off posts have no campaign; their title comes with the job.
+  const camps = job.campaign_id ? await rest(`campaigns?id=eq.${job.campaign_id}&select=title,description`) : [];
   const camp = (camps && camps[0]) || {};
   const work = (async () => {
     try { const path = await makeArt(job, camp); await setJob(id, { status: 'art', art_path: path }); }
