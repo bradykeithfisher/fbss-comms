@@ -88,6 +88,8 @@ function fmtRange(c,long){ const o=long?{weekday:'long',month:'long',day:'numeri
   return `${fmtD(c.date,o)}${t1?', '+t1:''} – ${fmtD(c.endDate,o)}${t2?', '+t2:''}`; }
 const fileKind = f => (f.type||'').startsWith('image/') ? 'image' : (f.type==='application/pdf' ? 'PDF' : (f.type||'').startsWith('video/') ? 'VIDEO' : ((f.name||'').split('.').pop()||'FILE').toUpperCase().slice(0,4));
 const isVideo = p => /\.(mp4|mov|m4v)$/i.test(p||'');
+const isRemote = p => /^https?:\/\//i.test(p||'');
+const BIG_VIDEO_MB = 100; // Cloudinary's limit for one video on its free plan
 const maxMb = () => (CFG && CFG.maxUploadMb) || 50;
 // A small preview for a photo or a video path.
 const mediaTag = (path, cls='') => isVideo(path) ? `<video class="${cls}" src="${esc(fileUrl(path))}#t=0.5" muted playsinline preload="metadata"></video>` : `<img class="${cls}" src="${esc(fileUrl(path))}" alt="">`;
@@ -114,7 +116,7 @@ const isPending = cid => { const c=cid&&S.campaigns[cid]; return !!c && (c._draf
 const isDeclined = cid => { const c=cid&&S.campaigns[cid]; return !!c && c.status==='declined'; };
 const hasDrafts = () => Object.values(S.campaigns).some(c=>c._draft);
 window.addEventListener('beforeunload', e=>{ if(hasDrafts()){ e.preventDefault(); e.returnValue=''; } });
-const fileUrl = path => path ? sb.storage.from('files').getPublicUrl(path).data.publicUrl : '';
+const fileUrl = path => !path ? '' : isRemote(path) ? path : sb.storage.from('files').getPublicUrl(path).data.publicUrl;
 
 /* ---------- row mapping ---------- */
 const t5 = t => t ? String(t).slice(0,5) : '';
@@ -757,7 +759,7 @@ function renderDrawer(){
           ${jobs.map(j=>`<div class="gjob" style="margin-top:6px"><div style="min-width:0;flex:1"><div class="gj-t">AI image: ${esc(String(j.options.prompt||'').slice(0,60))}${String(j.options.prompt||'').length>60?'…':''}</div><div class="small muted">${gfxStatus(j)}</div></div>
             ${(j.status==='failed'||gfxStuck(j))?`<button class="btn sm" data-action="gfx-retry" data-id="${esc(j.id)}">Try again</button>`:''}${!gfxBusy(j)?`<button class="btn ghost iconbtn sm" data-action="gfx-dismiss" data-id="${esc(j.id)}" aria-label="Remove from this list">×</button>`:''}</div>`).join('')}`; })():''}
       ${k.social&&imgs.some(isVideo)&&imgs.length>1?`<span class="small" style="color:var(--bad);margin-top:6px">A video post can have just the one video. Remove the other items, or split them into separate posts.</span>`:''}
-      ${k.social&&imgs.some(isVideo)?`<span class="small muted" style="margin-top:6px">Video posts go to Facebook as a Page video and to Instagram as a Reel. Vertical (9:16) MP4 works best. Max ${maxMb()} MB.</span>`:''}
+      ${k.social&&imgs.some(isVideo)?`<span class="small muted" style="margin-top:6px">Video posts go to Facebook as a Page video and to Instagram as a Reel. Vertical (9:16) MP4 works best. Max ${BIG_VIDEO_MB} MB.</span>`:''}
       ${!imgs.length&&c.coverPath?`<span class="small muted" style="margin-top:6px">Using the campaign's key art until you add a photo here.</span>`:''}
       ${(()=>{ const avail=(c.files||[]).filter(f=>(fileKind(f)==='image'||isVideo(f.path)) && !imgs.includes(f.path)); if(!avail.length) return '';
         return `<span class="small muted" style="margin:10px 0 6px">From campaign files (click to add):</span><div class="photos">${avail.map(f=>`<button class="photo ${isVideo(f.path)?'vid':''}" style="cursor:pointer" data-action="attach-file" data-id="${id}" data-file="${esc(f.path)}" title="Add ${esc(f.name)}">${mediaTag(f.path)}</button>`).join('')}</div>`; })()}
@@ -927,7 +929,7 @@ function newCampaign(){
 function confirmBox(title, body, fn, yes){ V.modal={type:'confirm', title, body, fn, yes}; render(true); }
 async function copyText(text){ try{ await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }catch(e){ toast('Copy was blocked. Select the text and press Ctrl+C (⌘C on Mac).'); } }
 function pathInUse(path){ return Object.values(S.dests).some(d=>(d.imagePaths||[]).includes(path)) || Object.values(S.campaigns).some(c=>c.coverPath===path || (c.files||[]).some(f=>f.path===path)); }
-async function deleteFileIfUnused(path){ if(path && !pathInUse(path)) await sb.storage.from('files').remove([path]).catch(()=>{}); }
+async function deleteFileIfUnused(path){ if(path && !isRemote(path) && !pathInUse(path)) await sb.storage.from('files').remove([path]).catch(()=>{}); }
 
 function applyPostResult(d, r){
   d.publishedParts=r.parts||d.publishedParts; d.publishError='';
@@ -1306,13 +1308,26 @@ async function toJpeg(blob, max=2048){
     return await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('Could not convert image')),'image/jpeg',0.9));
   } finally { URL.revokeObjectURL(url); }
 }
+async function uploadBigVideo(f){
+  const s=await api('video-sign',{});
+  const fd=new FormData(); fd.append('file',f); fd.append('api_key',s.apiKey); fd.append('folder',s.folder); fd.append('timestamp',String(s.timestamp)); fd.append('signature',s.signature);
+  return await new Promise((res,rej)=>{
+    const x=new XMLHttpRequest(); let last=0;
+    x.open('POST',`https://api.cloudinary.com/v1_1/${encodeURIComponent(s.cloudName)}/video/upload`);
+    x.upload.onprogress=e=>{ if(!e.lengthComputable) return; const pc=Math.floor(e.loaded/e.total*100); if(pc>=last+20){ last=pc; toast(`Uploading ${f.name}… ${pc}%`); } };
+    x.onload=()=>{ let j={}; try{ j=JSON.parse(x.responseText); }catch(_){} if(x.status<300&&j.secure_url) res(j.secure_url); else rej(new Error((j.error&&j.error.message)||`Cloudinary answered ${x.status}`)); };
+    x.onerror=()=>rej(new Error('the connection dropped'));
+    x.send(fd);
+  });
+}
 async function handleUpload(el){
   const [kind,id]=el.dataset.upload.split(':'); const files=[...el.files]; el.value=''; let n=0;
   for(const f of files){
     const vid = /^video\//.test(f.type) || isVideo(f.name);
     if(kind==='dest' && !f.type.startsWith('image/') && !vid){ toast(`${f.name} isn't a photo or video`); continue; }
     if(kind!=='file' && kind!=='dest' && !f.type.startsWith('image/')){ toast(`${f.name} isn't an image`); continue; }
-    if(f.size>maxMb()*1024*1024){ toast(`${f.name} is over ${maxMb()} MB`); continue; }
+    const big = vid && (kind==='dest'||kind==='file') && f.size>maxMb()*1024*1024;
+    if(f.size>(big?BIG_VIDEO_MB:maxMb())*1024*1024){ toast(vid?`${f.name} is over ${BIG_VIDEO_MB} MB. Export it smaller (1080p, under ${BIG_VIDEO_MB} MB) and try again.`:`${f.name} is over ${maxMb()} MB`); continue; }
     toast(`Uploading ${f.name}…`);
     try{
       let body=f, type=f.type||'application/octet-stream', path;
@@ -1320,6 +1335,12 @@ async function handleUpload(el){
       else if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
       else if(kind==='cover'){ body=await toJpeg(f); type='image/jpeg'; path=`campaigns/${id}/cover-${uid().slice(0,8)}.jpg`; }
       else path=`campaigns/${id}/${uid().slice(0,8)}-${safeName(f.name)}`;
+      if(big){ // Too big for our storage: send it straight to Cloudinary and keep its web address.
+        const url=await uploadBigVideo(f);
+        if(kind==='dest'){ const d=S.dests[id]; if(!d) continue; d.imagePaths=[...(d.imagePaths||[]), url]; saveDest(d); }
+        else { const c=S.campaigns[id]; if(!c) continue; c.files=[...(c.files||[]), {path:url, name:f.name, type, size:f.size, at:Date.now()}]; saveCampaign(c); }
+        n++; render(true); continue;
+      }
       let dims=null; if(kind==='file' && f.type.startsWith('image/')){ const u=URL.createObjectURL(f); dims=await imageSize(u); URL.revokeObjectURL(u); }
       const { error } = await sb.storage.from('files').upload(path, body, { contentType:type, upsert:false });
       if(error) throw error;

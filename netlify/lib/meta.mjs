@@ -18,7 +18,7 @@ export async function getAccount() {
   return rows[0] || null;
 }
 
-export const publicUrl = (path) => `${SUPABASE_URL()}/storage/v1/object/public/files/${path.split('/').map(encodeURIComponent).join('/')}`;
+export const publicUrl = (path) => /^https?:\/\//i.test(path) ? path : `${SUPABASE_URL()}/storage/v1/object/public/files/${path.split('/').map(encodeURIComponent).join('/')}`;
 export const isVideo = (path) => /\.(mp4|mov|m4v)$/i.test(path || '');
 
 export async function loadDestination(id) {
