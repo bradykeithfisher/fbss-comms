@@ -83,21 +83,27 @@ export const FBSS_STYLE = `First Baptist Sulphur Springs house style (from the c
 // Custom images for one social post: staff pick the campaign images to match and describe what they want.
 export const POST_SIZES: Record<string, [number, number]> = { feed: [1088, 1360], square: [1216, 1216], story: [1152, 2048], wide: [2048, 1152] };
 const POST_SHAPE: Record<string, string> = { feed: 'a vertical 4:5 feed post', square: 'a square 1:1 post', story: 'a tall 9:16 story', wide: 'a wide 16:9 image' };
-function postPrompt(camp: Record<string, string>, opts: Record<string, any>) {
+// The brand kit (Settings > Brand kit): notes replace the built-in style text, images go along as references.
+export type Brand = { notes: string; refs: string[] };
+const styleText = (b?: Brand) => (b && b.notes && b.notes.trim()) ? `${b.notes.trim().slice(0, 2500)}\nDo not draw the church logo.` : FBSS_STYLE;
+const brandLine = (b: Brand | undefined, before: number) => b && b.refs.length
+  ? `The last ${b.refs.length === 1 ? 'attached image is' : b.refs.length + ' attached images are'} from the church's brand kit${before ? ' (after the ' + before + ' event image' + (before > 1 ? 's' : '') + ')' : ''}. Use them as the style guide: match their colors, lettering feel, textures, photography and overall look. Do not copy their words, layouts exactly, or any logo.` : '';
+function postPrompt(camp: Record<string, string>, opts: Record<string, any>, brand?: Brand) {
   const refs = Array.isArray(opts.refs) && opts.refs.length;
   return [
-    refs ? `The attached image${opts.refs.length > 1 ? 's are' : ' is'} this event's existing graphics. Make a new image that clearly belongs to the same set: the same lettering style, colors, imagery and textures.` : '',
+    refs ? `The ${brand && brand.refs.length ? 'first ' : ''}attached image${opts.refs.length > 1 ? 's are' : ' is'} this event's existing graphics. Make a new image that clearly belongs to the same set: the same lettering style, colors, imagery and textures.` : '',
     `Create ${POST_SHAPE[opts.shape] || POST_SHAPE.feed} for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas, to post on social media. Polished, professional church media design.`,
     `Event: ${(opts.text && opts.text.title) || camp.title || 'Church event'}.`,
-    opts.style === 'fbss' ? `Style: ${FBSS_STYLE}` : '',
+    opts.style === 'fbss' ? `Style: ${styleText(brand)}` : '',
+    brandLine(brand, refs || 0),
     `What to make (from the church staff; follow this closely): ${String(opts.prompt || '').slice(0, 1500)}`,
     `Spell any words exactly as the staff wrote them. Beyond the words they asked for and the event title, add no other words. No logos or watermarks unless asked.`,
     `Keep words large and readable on a phone, with comfortable margins.`,
     `If people appear, show them from behind, in silhouette or at a distance, with no close-up faces.`,
   ].filter(Boolean).join('\n');
 }
-export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, any>) {
-  if (opts.post) return postPrompt(camp, opts);
+export function buildPrompt(kind: string, camp: Record<string, string>, opts: Record<string, any>, brand?: Brand) {
+  if (opts.post) return postPrompt(camp, opts, brand);
   const t = (opts.text || {}) as Record<string, string>;
   if (!t.title) t.title = camp.title || 'Church event';
   if (kind === 'background') {
@@ -109,10 +115,11 @@ export function buildPrompt(kind: string, camp: Record<string, string>, opts: Re
   }
   const desc = String(camp.description || '').replace(/\s+/g, ' ').slice(0, 600);
   return [
-    opts.ref ? `The attached image is the approved design concept. Create the version described below of this same design: the same lettering style, colors, imagery, textures and overall look, re-laid-out for the new shape so it looks like part of the same set.` : '',
+    opts.ref ? `The ${brand && brand.refs.length ? 'first ' : ''}attached image is the approved design concept. Create the version described below of this same design: the same lettering style, colors, imagery, textures and overall look, re-laid-out for the new shape so it looks like part of the same set.` : '',
     `Design a finished, professional event graphic for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas. It should look like the work of a skilled church graphic designer: expressive, custom-feeling lettering that is part of the design, a strong hierarchy, and imagery that fits the event.`,
     `Event: ${t.title}.${desc ? ' About it: ' + desc : ''}`,
-    opts.style === 'fbss' ? `Style: ${FBSS_STYLE}` : '',
+    opts.style === 'fbss' ? `Style: ${styleText(brand)}` : '',
+    brandLine(brand, opts.ref ? 1 : 0),
     opts.brief ? `Design direction (follow this closely${opts.style === 'fbss' ? ', within the house style' : ''}): ${String(opts.brief).slice(0, 900)}` : '',
     !opts.brief && opts.style && opts.style !== 'auto' && opts.style !== 'fbss' ? `Visual style: ${opts.style}.` : '',
     opts.notes ? `Ideas from the church staff: ${String(opts.notes).slice(0, 600)}` : '',
@@ -147,21 +154,25 @@ function b64ToBytes(b64: string) {
 }
 
 export const publicFileUrl = (path: string) => `${URL_()}/storage/v1/object/public/files/${path.split('/').map(encodeURIComponent).join('/')}`;
-export async function makeArt(job: Record<string, any>, camp: Record<string, string>) {
+export async function makeArt(job: Record<string, any>, camp: Record<string, string>, brandIn?: Brand) {
   const opts = job.options || {};
+  // Brand images go with First Baptist style designs (not the text-free background, which only edits the concept).
+  // The concept stays the main reference for deliverables, so fewer brand images go with it.
+  const refs = opts.post ? (Array.isArray(opts.refs) ? opts.refs.slice(0, 4).map(String) : []) : (opts.ref ? [String(opts.ref)] : []);
+  const brand = opts.style === 'fbss' && job.kind !== 'background' && brandIn ? { notes: brandIn.notes, refs: brandIn.refs.slice(0, refs.length ? 3 : 6) } : undefined;
+  if (brand) refs.push(...brand.refs);
   const [w, h] = opts.post ? (POST_SIZES[opts.shape] || POST_SIZES.feed) : (SIZES[job.kind] || SIZES.social);
   const req: Record<string, unknown> = {
     model: env('OPENAI_IMAGE_MODEL') || 'gpt-image-2',
-    prompt: buildPrompt(job.kind, camp, opts),
+    prompt: buildPrompt(job.kind, camp, opts, brand),
     size: `${w}x${h}`,
     quality: env('OPENAI_IMAGE_QUALITY') || 'medium',
     output_format: 'jpeg',
     output_compression: 92,
     n: 1,
   };
-  // With an approved concept, ask for the same artwork in this shape (image edit with the concept as reference).
-  const refs = opts.post ? (Array.isArray(opts.refs) ? opts.refs.slice(0, 4).map(String) : []) : (opts.ref ? [String(opts.ref)] : []);
-  if (refs.length) req.images = refs.map((p) => ({ image_url: publicFileUrl(p) }));
+  // With an approved concept or brand images, it's an image edit with those as references.
+  if (refs.length) req.images = refs.map((p) => ({ image_url: /^https?:\/\//i.test(p) ? p : publicFileUrl(p) }));
   const res = await fetch(`https://api.openai.com/v1/images/${refs.length ? 'edits' : 'generations'}`, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + OPENAI_KEY(), 'content-type': 'application/json' },
@@ -201,8 +212,14 @@ export async function handler(req: Request): Promise<Response> {
   // One-off posts have no campaign; their title comes with the job.
   const camps = job.campaign_id ? await rest(`campaigns?id=eq.${job.campaign_id}&select=title,description`) : [];
   const camp = (camps && camps[0]) || {};
+  let brand: Brand | undefined;
+  if ((job.options || {}).style === 'fbss') {
+    const st = await rest('app_settings?id=eq.1&select=data').catch(() => []);
+    const b = (st && st[0] && st[0].data && st[0].data.brand) || {};
+    brand = { notes: String(b.notes || ''), refs: (Array.isArray(b.assets) ? b.assets : []).filter((a: any) => a && a.path && a.on !== false).slice(0, 6).map((a: any) => String(a.path)) };
+  }
   const work = (async () => {
-    try { const path = await makeArt(job, camp); await setJob(id, { status: 'art', art_path: path }); }
+    try { const path = await makeArt(job, camp, brand); await setJob(id, { status: 'art', art_path: path }); }
     catch (e) { await setJob(id, { status: 'failed', error: String((e as Error).message || e).slice(0, 400) }).catch(() => {}); }
   })();
   // Keep running after we answer, so closing the page doesn't stop the artwork.

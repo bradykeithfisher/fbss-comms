@@ -237,7 +237,13 @@ async function loadAll(){
   if(V.pendingDest){ const pd=S.dests[V.pendingDest]; if(pd){ if(pd.campaignId){ V.view='campaign'; V.campaignId=pd.campaignId; } else if(pd.date) V.anchor=parseYmd(pd.date); V.openDest=pd.id; } V.pendingDest=null; }
   render();
 }
-function applySettings(data){ const x = data||{}; S.settings = { handle:x.handle||'First Baptist Sulphur Springs', voice:x.voice||DEFAULT_VOICE, channels:Array.isArray(x.channels)&&x.channels.length?x.channels:clone(DEFAULT_CHANNELS) }; }
+const DEFAULT_BRAND_NOTES=`First Baptist Sulphur Springs brand (from our brand guide).
+Feeling: warm, serene, welcoming, gospel-focused, authentic, unified, vibrant but never loud. Tagline: "For Hopkins County. For the Gospel."
+Colors: Rust #91412D, Cream #EFE9DB, Moss #8C9077, Gold #B47E3D, Dusty Blue #ACBABD, Slate Blue #414A55. Deep earthy tones with softer reflective hues; cream and slate blue as grounds, rust and gold as accents.
+Type: titles in Hyogo (a clean, classical display face) set in ALL CAPS with wide letter spacing; subheads in Mr Eaves XL Mod (clean, approachable sans) in all caps with wide spacing; body text in Baskerville.
+Look: generous open space, thin hairline rules, clean alignment, minimal ornament. Motifs: stained-glass arches and the three-pillar / three-leaf shape (Gather, Grow, Go), used faintly as tone-on-tone line art. Warm, natural photography with soft light.
+Don't: draw the church logo, use neon or harsh saturated colors, busy layouts, or grunge effects.`;
+function applySettings(data){ const x = data||{}; const b=x.brand||{}; S.settings = { handle:x.handle||'First Baptist Sulphur Springs', voice:x.voice||DEFAULT_VOICE, brand:{ notes: typeof b.notes==='string'?b.notes:DEFAULT_BRAND_NOTES, assets:Array.isArray(b.assets)?b.assets:[] }, channels:Array.isArray(x.channels)&&x.channels.length?x.channels:clone(DEFAULT_CHANNELS) }; }
 function subscribe(){
   rtChannel = sb.channel('fbss-live')
     .on('postgres_changes',{event:'*',schema:'public',table:'campaigns'}, p=>{ const id=(p.new&&p.new.id)||(p.old&&p.old.id); if(dirty['c:'+id]) return;
@@ -694,6 +700,17 @@ function renderSettings(){
       <div class="row"><button class="btn dark" data-action="newsletter-sync" ${V.busy?'disabled':''}>${V.busy?'Sending…':'Send to newsletter now'}</button>${V.nlResult?`<span class="small muted">${esc(V.nlResult)}</span>`:''}</div>`
     :`<p class="small muted" style="margin:0">Not connected. Add <code>NEWSLETTER_URL</code> and <code>NEWSLETTER_IMPORT_KEY</code> in Netlify to send each week's Weekly Update items to the Newsletter Studio automatically.</p>`}
   </section>
+  <section class="panel stack brandkit"><h2>Brand kit for AI graphics</h2>
+    <p class="prose small" style="margin:0">Used whenever a design or post image is set to <strong>First Baptist style</strong>. The image AI looks at the pictures below and follows the notes.</p>
+    <div class="field"><label class="lbl" for="b-notes">Brand notes</label><textarea id="b-notes" data-bind="brand:notes" rows="9" ${admin?'':'readonly'}>${esc(s.brand.notes)}</textarea>
+      ${admin?`<button class="btn ghost sm" data-action="brand-reset-notes" style="align-self:flex-start">Reset to the brand guide text</button>`:''}</div>
+    <div class="field"><span class="lbl">Brand images · ${s.brand.assets.filter(a=>a.on!==false).length} in use${s.brand.assets.length>BRAND_MAX?` (the first ${BRAND_MAX} checked are sent)`:''}</span>
+      <span class="small muted">Best: past graphics you love, photos of the building and stained glass, textures and patterns, the pillar icons, and a sample title set in your fonts. Avoid images with lots of small text, and leave the logo out.</span>
+      <div class="photos">${s.brand.assets.map((a,i)=>`<div class="photo brandimg ${a.on===false?'off':''}"><a href="${esc(fileUrl(a.path))}" target="_blank" rel="noopener" aria-label="Open full size"></a><img src="${esc(fileUrl(a.path))}" alt="${esc(a.name)}" loading="lazy">
+        ${admin?`<label class="use"><input type="checkbox" data-action="brand-toggle" data-i="${i}" ${a.on===false?'':'checked'}> Use</label><button class="x" data-action="brand-remove" data-i="${i}" aria-label="Remove">×</button>`:''}</div>`).join('')}
+      ${admin?`<label class="addphoto" for="up-brand">+ Add brand images<br><span class="small muted">JPG or PNG</span></label><input type="file" accept="image/*" multiple class="sr" id="up-brand" data-upload="brand:1">`:''}</div>
+      ${admin?'':'<span class="small muted">Only admins can change the brand kit.</span>'}</div>
+  </section>
   <section class="panel stack"><h2>Writing voice</h2>
     <div class="field"><label class="lbl" for="s-voice">Church voice for AI copy</label><textarea id="s-voice" data-bind="set:voice" rows="6">${esc(s.voice)}</textarea></div>
     <div class="field"><label class="lbl" for="s-handle">Page name in post previews</label><input type="text" id="s-handle" data-bind="set:handle" value="${esc(s.handle)}"></div>
@@ -1023,7 +1040,7 @@ const A = {
     const last=gfxPostJobs(d.campaignId||null,d.id).slice(-1)[0]; const o=(last&&last.options)||{};
     const imgs=c ? (c.files||[]).filter(isImgFile).map(f=>f.path) : (d.imagePaths||[]).filter(p=>!isVideo(p));
     const def=o.refs||(c&&c.coverPath&&imgs.includes(c.coverPath)?[c.coverPath]:imgs.slice(0,1));
-    V.modal={type:'gfx-post', id:d.id, refs:def.filter(p=>imgs.includes(p)), shape:o.shape||'feed', style:o.style||'match', prompt:''}; render(true); setTimeout(()=>{ const t=document.getElementById('gp-prompt'); if(t) t.focus(); },50); },
+    V.modal={type:'gfx-post', id:d.id, refs:def.filter(p=>imgs.includes(p)), shape:o.shape||'feed', style:o.style||'fbss', prompt:''}; render(true); setTimeout(()=>{ const t=document.getElementById('gp-prompt'); if(t) t.focus(); },50); },
   async 'gfx-post-go'(){ const m=V.modal; if(!m||V.busy) return; const d=S.dests[m.id]; if(!d) return; const c=S.campaigns[d.campaignId];
     m.prompt=document.getElementById('gp-prompt').value.trim(); m.shape=document.getElementById('gp-shape').value; m.style=document.getElementById('gp-style').value;
     if(!m.prompt){ toast('Describe what the image should show or say'); document.getElementById('gp-prompt').focus(); return; }
@@ -1031,7 +1048,11 @@ const A = {
     try{ await gfxStart(c?c.id:null,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), shape:m.shape, style:m.style, prompt:m.prompt, text:{title:c?c.title:(d.title||'')}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
-  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'auto', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
+  'brand-toggle'(el){ const a=settings().brand.assets[+el.dataset.i]; if(!a) return; a.on=el.checked; saveSettings(); render(true); },
+  'brand-remove'(el){ const b=settings().brand; const a=b.assets[+el.dataset.i]; if(!a) return;
+    confirmBox('Remove this brand image?', 'The AI will stop using it.', ()=>{ b.assets=b.assets.filter(x=>x!==a); saveSettings(); sb.storage.from('files').remove([a.path]).catch(()=>{}); render(true); }, 'Remove'); },
+  'brand-reset-notes'(){ settings().brand.notes=DEFAULT_BRAND_NOTES; saveSettings(); render(true); toast('Brand notes reset'); },
+  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'fbss', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
   async 'gfx-go'(){ const m=V.modal; if(!m||V.busy) return; const c=S.campaigns[m.id];
     const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim(), title=document.getElementById('gf-name').value.trim();
     Object.assign(m, gfxReadPick(), { style, notes, title });
@@ -1272,6 +1293,7 @@ function onField(el, committed){
     if(field==='assigneeId' && val && val!==before) notifyAssigned(d.id);
     if(field==='copy'){ const k=kindOf(channelById(d.channelId)); const cnt=document.getElementById('cnt-'+id); if(cnt){ cnt.textContent=`${val.length}${k.limit?' / '+k.limit:''} characters`; cnt.classList.toggle('over', !!(k.limit&&val.length>k.limit)); } }
     if(committed && !['copy','notes','headline'].includes(field)) render(true); }
+  else if(kind==='brand'){ settings().brand[field]=val; saveSettings(committed?0:700); }
   else if(kind==='camp'){ const c=S.campaigns[id]; if(!c) return; const prev=c[field]; c[field]=val;
     if(field==='date' && val){ if(!c.endDate||c.endDate<val||c.endDate===prev) c.endDate=val; if(!c.adEnd||c.adEnd===prev) c.adEnd=c.endDate; }
     if(field==='endDate' && val && c.adEnd===prev) c.adEnd=val;
@@ -1333,6 +1355,7 @@ async function handleUpload(el){
       let body=f, type=f.type||'application/octet-stream', path;
       if(kind==='dest' && vid){ const ext=(f.name.match(/\.(mp4|mov|m4v)$/i)||['','mp4'])[1].toLowerCase(); type=f.type||(ext==='mov'?'video/quicktime':'video/mp4'); path=`photos/${id}/${uid()}.${ext}`; }
       else if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
+      else if(kind==='brand'){ body=await toJpeg(f,1600); type='image/jpeg'; path=`brand/${uid()}.jpg`; }
       else if(kind==='cover'){ body=await toJpeg(f); type='image/jpeg'; path=`campaigns/${id}/cover-${uid().slice(0,8)}.jpg`; }
       else path=`campaigns/${id}/${uid().slice(0,8)}-${safeName(f.name)}`;
       if(big){ // Too big for our storage: send it straight to Cloudinary and keep its web address.
@@ -1345,6 +1368,7 @@ async function handleUpload(el){
       const { error } = await sb.storage.from('files').upload(path, body, { contentType:type, upsert:false });
       if(error) throw error;
       if(kind==='dest'){ const d=S.dests[id]; if(!d) continue; d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); }
+      else if(kind==='brand'){ settings().brand.assets=[...settings().brand.assets, {path, name:f.name, on:true}]; saveSettings(); }
       else if(kind==='file'){ const c=S.campaigns[id]; if(!c) continue; c.files=[...(c.files||[]), {path, name:f.name, type, size:f.size, at:Date.now(), ...(dims?{w:dims.w,h:dims.h}:{})}]; syncKeyArt(c); saveCampaign(c); }
       else { const c=S.campaigns[id]; if(!c) continue; const old=c.coverPath; c.coverPath=path; saveCampaign(c); deleteFileIfUnused(old); }
       n++; render(true);
@@ -1489,6 +1513,7 @@ const GFX_DIRECTIONS=[
   {name:'Paper cutout', brief:'Layered paper-cutout illustration with soft shadows; a chunky rounded title cut from paper, in bright but warm colors, centered.'},
   {name:'Watercolor wash', brief:'Loose watercolor washes and hand-drawn ink details; a brush-lettered title in deep color across the middle with lots of white space.'},
 ];
+const BRAND_MAX=6; // brand images sent to the image AI with each First Baptist style design
 const FBSS_STYLE_BRIEF='calm, refined and warm; cream or deep slate-blue backgrounds with rust, gold, moss and dusty-blue accents; elegant wide-spaced all-caps serif titles, small spaced all-caps sans subheads, Baskerville-style text; generous space, hairline rules, minimal ornament, faint stained-glass or three-leaf line art; warm natural photography.';
 const GFX_DIRECTIONS_FBSS=[
   {name:'Cream and hairlines', brief:'Warm cream background with a wide-spaced all-caps serif title in slate blue, a thin gold hairline rule, and faint tone-on-tone stained-glass arch line art in one corner.'},
@@ -1499,7 +1524,7 @@ async function gfxDirections(c, n, prior, style, notes, title){
   const used=prior.map(p=>p.name);
   const pool=style==='fbss'?GFX_DIRECTIONS_FBSS:GFX_DIRECTIONS; const fallback=()=>pool.filter(d=>!used.includes(d.name)).slice(0,n).concat(pool).slice(0,n);
   if(!(CFG&&CFG.aiEnabled)) return fallback();
-  const styleRule = style==='fbss' ? `Every direction must follow the First Baptist house style from the church's brand guide: ${FBSS_STYLE_BRIEF} Within that style, make the directions differ completely in layout, imagery, subject and which brand colors lead.`
+  const styleRule = style==='fbss' ? `Every direction must follow the First Baptist house style from the church's brand guide: ${(settings().brand.notes||'').trim().slice(0,1500)||FBSS_STYLE_BRIEF} Within that style, make the directions differ completely in layout, imagery, subject and which brand colors lead.`
     : style&&style!=='auto' ? `Every direction must use this imagery style: ${GFX_STYLES.find(x=>x[0]===style)[1]}. Make them differ completely in lettering style, layout, color palette and subject.`
     : 'Make them differ completely in lettering style, layout, color palette, imagery and medium.';
   const prompt=`You are the art director for First Baptist Sulphur Springs, a Baptist church in Sulphur Springs, Texas.
