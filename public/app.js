@@ -1045,14 +1045,15 @@ const A = {
     m.prompt=document.getElementById('gp-prompt').value.trim(); m.shape=document.getElementById('gp-shape').value; m.style=document.getElementById('gp-style').value;
     if(!m.prompt){ toast('Describe what the image should show or say'); document.getElementById('gp-prompt').focus(); return; }
     V.busy=true; render(true);
-    try{ await gfxStart(c?c.id:null,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), shape:m.shape, style:m.style, prompt:m.prompt, text:{title:c?c.title:(d.title||'')}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
+    try{ await gfxStart(c?c.id:null,[{kind:'social', options:{post:true, destId:d.id, refs:m.refs.slice(0,4), inspo:(m.inspo||[]).slice(0,INSPO_MAX), shape:m.shape, style:m.style, prompt:m.prompt, text:{title:c?c.title:(d.title||'')}}}]); V.modal=null; toast('Generating the image. It will appear in this post\'s photos in a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
+  'inspo-remove'(el){ const m=V.modal; if(!m) return; gfxKeepTyped(); m.inspo=(m.inspo||[]).filter((_,i)=>i!==+el.dataset.i); render(true); },
   'brand-toggle'(el){ const a=settings().brand.assets[+el.dataset.i]; if(!a) return; a.on=el.checked; saveSettings(); render(true); },
   'brand-remove'(el){ const b=settings().brand; const a=b.assets[+el.dataset.i]; if(!a) return;
     confirmBox('Remove this brand image?', 'The AI will stop using it.', ()=>{ b.assets=b.assets.filter(x=>x!==a); saveSettings(); sb.storage.from('files').remove([a.path]).catch(()=>{}); render(true); }, 'Remove'); },
   'brand-reset-notes'(){ settings().brand.notes=DEFAULT_BRAND_NOTES; saveSettings(); render(true); toast('Brand notes reset'); },
-  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, style:o.style||'fbss', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
+  'gfx-open'(el){ const last=gfxJobs(el.dataset.id).filter(j=>j.kind==='concept').slice(-1)[0]; const o=(last&&last.options)||{}; V.modal={type:'graphics', id:el.dataset.id, pick:{poster:true,title:true,background:true}, social:1, socialD:1, inspo:o.inspo||[], style:o.style||'fbss', notes:o.notes||'', title:(o.text&&o.text.title)||S.campaigns[el.dataset.id].title||''}; render(true); },
   async 'gfx-go'(){ const m=V.modal; if(!m||V.busy) return; const c=S.campaigns[m.id];
     const style=document.getElementById('gf-style').value, notes=document.getElementById('gf-notes').value.trim(), title=document.getElementById('gf-name').value.trim();
     Object.assign(m, gfxReadPick(), { style, notes, title });
@@ -1062,7 +1063,7 @@ const A = {
     const plan={...m.pick, social:m.social, socialD:m.socialD}, batch=uid();
     flushAll(); V.busy=true; render(true);
     try{ const dirs=await gfxDirections(c, 2, [], style, notes, title);
-      await gfxStart(c.id, dirs.map((d,i)=>({kind:'concept', options:{style, notes, text, plan, batch, variation:i+1, direction:d.name, brief:d.brief}}))); V.modal=null; toast('Designing two concepts. You can keep working; this takes a minute or two.'); }
+      await gfxStart(c.id, dirs.map((d,i)=>({kind:'concept', options:{style, notes, text, plan, batch, inspo:(m.inspo||[]).slice(0,INSPO_MAX), variation:i+1, direction:d.name, brief:d.brief}}))); V.modal=null; toast('Designing two concepts. You can keep working; this takes a minute or two.'); }
     catch(e){ toast(e.message||'Could not start'); }
     V.busy=false; render(true); },
   'gfx-review'(el){ V.modal={type:'gfx-review', id:el.dataset.id}; render(true); gfxSchedule(); },
@@ -1070,7 +1071,7 @@ const A = {
     V.busy=true; render(true);
     try{ const prior=r.list.filter(j=>j.options.brief).map(j=>({name:j.options.direction, brief:j.options.brief}));
       const [d]=await gfxDirections(S.campaigns[cid], 1, prior, o.style, o.notes, o.text&&o.text.title);
-      await gfxStart(cid,[{kind:'concept', options:{style:o.style, notes:o.notes, text:o.text, plan:o.plan, batch:o.batch, variation:Math.max(...r.list.map(j=>j.options.variation||1))+1, direction:d.name, brief:d.brief}}]); }
+      await gfxStart(cid,[{kind:'concept', options:{style:o.style, notes:o.notes, text:o.text, inspo:o.inspo||[], plan:o.plan, batch:o.batch, variation:Math.max(...r.list.map(j=>j.options.variation||1))+1, direction:d.name, brief:d.brief}}]); }
     catch(e){ toast(e.message); }
     V.busy=false; render(true); },
   'gfx-choose'(el){ const j=S.gjobs[el.dataset.id]; if(!j) return; const p=j.options.plan||{}; const c=S.campaigns[j.campaign_id];
@@ -1356,6 +1357,7 @@ async function handleUpload(el){
       if(kind==='dest' && vid){ const ext=(f.name.match(/\.(mp4|mov|m4v)$/i)||['','mp4'])[1].toLowerCase(); type=f.type||(ext==='mov'?'video/quicktime':'video/mp4'); path=`photos/${id}/${uid()}.${ext}`; }
       else if(kind==='dest'){ body=await toJpeg(f); type='image/jpeg'; path=`photos/${id}/${uid()}.jpg`; }
       else if(kind==='brand'){ body=await toJpeg(f,1600); type='image/jpeg'; path=`brand/${uid()}.jpg`; }
+      else if(kind==='inspo'){ if(!V.modal||(V.modal.inspo||[]).length>=INSPO_MAX) continue; body=await toJpeg(f,1600); type='image/jpeg'; path=`inspo/${uid()}.jpg`; }
       else if(kind==='cover'){ body=await toJpeg(f); type='image/jpeg'; path=`campaigns/${id}/cover-${uid().slice(0,8)}.jpg`; }
       else path=`campaigns/${id}/${uid().slice(0,8)}-${safeName(f.name)}`;
       if(big){ // Too big for our storage: send it straight to Cloudinary and keep its web address.
@@ -1368,6 +1370,7 @@ async function handleUpload(el){
       const { error } = await sb.storage.from('files').upload(path, body, { contentType:type, upsert:false });
       if(error) throw error;
       if(kind==='dest'){ const d=S.dests[id]; if(!d) continue; d.imagePaths=[...(d.imagePaths||[]), path]; saveDest(d); }
+      else if(kind==='inspo'){ const m=V.modal; if(!m) continue; gfxKeepTyped(); m.inspo=[...(m.inspo||[]), path].slice(0,INSPO_MAX); }
       else if(kind==='brand'){ settings().brand.assets=[...settings().brand.assets, {path, name:f.name, on:true}]; saveSettings(); }
       else if(kind==='file'){ const c=S.campaigns[id]; if(!c) continue; c.files=[...(c.files||[]), {path, name:f.name, type, size:f.size, at:Date.now(), ...(dims?{w:dims.w,h:dims.h}:{})}]; syncKeyArt(c); saveCampaign(c); }
       else { const c=S.campaigns[id]; if(!c) continue; const old=c.coverPath; c.coverPath=path; saveCampaign(c); deleteFileIfUnused(old); }
@@ -1445,6 +1448,10 @@ function renderGfxModal(m){
     <p class="small muted" style="margin:0">You'll get two design concepts first. Pick one (or ask for another), and these are made to match:</p>
     ${gfxPickHtml(m)}
     <div class="field"><label class="lbl" for="gf-style">Style</label><select id="gf-style">${GFX_STYLES.map(([v,l])=>`<option value="${v}" ${m.style===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><span class="lbl">Inspiration pictures <span class="small muted" style="text-transform:none;letter-spacing:0">optional, up to ${INSPO_MAX}</span></span>
+      <span class="small muted">A design, photo or style you like. The AI borrows its mood, layout or lettering; it won't copy it exactly. Say what you like about it in the box below.</span>
+      <div class="photos">${(m.inspo||[]).map((p,i)=>`<div class="photo"><img src="${esc(fileUrl(p))}" alt="Inspiration"><button class="x" data-action="inspo-remove" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}
+      ${(m.inspo||[]).length<INSPO_MAX?`<label class="addphoto" for="up-inspo">+ Add inspiration<br><span class="small muted">JPG or PNG</span></label><input type="file" accept="image/*" multiple class="sr" id="up-inspo" data-upload="inspo:1">`:''}</div></div>
     <div class="field"><label class="lbl" for="gf-notes">Ideas for the artwork <span class="small muted" style="text-transform:none;letter-spacing:0">optional</span></label><textarea id="gf-notes" rows="3" placeholder="e.g. candlelight and evergreen branches, a cozy winter feel">${esc(m.notes||'')}</textarea></div>
     <p class="small muted" style="margin:0">OpenAI designs each graphic, title lettering included, from the campaign's title and description. Each image costs a few cents; the poster costs a little more.</p>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-go" ${V.busy?'disabled':''}>${V.busy?'Planning concepts…':'Create 2 concepts'}</button></div>`;
@@ -1461,6 +1468,10 @@ function gfxPickHtml(m){
         <input type="number" id="gf-countD" min="1" max="6" value="${Math.max(1,m.socialD||1)}" style="width:72px" aria-label="How many social posts with event details"></div>
     </div>`;
 }
+// Copy what's typed in an open graphics dialog into V.modal, so a redraw (e.g. after an upload) keeps it.
+function gfxKeepTyped(){ const m=V.modal; if(!m) return; const v=id=>{ const e=document.getElementById(id); return e?e.value:undefined; };
+  if(m.type==='graphics'){ if(v('gf-name')!==undefined){ m.title=v('gf-name'); m.notes=v('gf-notes'); m.style=v('gf-style'); try{ Object.assign(m, gfxReadPick()); }catch(_){} } }
+  if(m.type==='gfx-post'){ if(v('gp-prompt')!==undefined){ m.prompt=v('gp-prompt'); m.shape=v('gp-shape'); m.style=v('gp-style'); } } }
 function gfxReadPick(){
   const pick=k=>document.getElementById('gf-'+k).checked; const n=id=>Math.min(6,Math.max(1,parseInt(document.getElementById(id).value,10)||1));
   return { pick:{poster:pick('poster'),title:pick('title'),background:pick('background')}, social:pick('social')?n('gf-count'):0, socialD:pick('socialD')?n('gf-countD'):0 };
@@ -1477,6 +1488,10 @@ function renderGfxPost(m){
       :`<span class="small muted">${c?'This campaign has no images yet, so the image will be designed from your description alone. Add graphics to Campaign files (or use Design graphics) to match a look.':'No photos to match yet, so the image will be designed from your description and the style above.'}</span>`}</div>
     <div class="field"><label class="lbl" for="gp-prompt">What should it show or say?</label><textarea id="gp-prompt" rows="4" placeholder="e.g. Add &quot;Register by Dec 13&quot; in the same lettering, with a countdown feel">${esc(m.prompt||'')}</textarea>
       <span class="small muted">Put any words you want on the image in quotes, spelled exactly.</span></div>
+    <div class="field"><span class="lbl">Inspiration pictures <span class="small muted" style="text-transform:none;letter-spacing:0">optional, up to ${INSPO_MAX}</span></span>
+      <span class="small muted">A design, photo or style you like. The AI borrows its mood, layout or lettering; it won't copy it exactly. Say what you like about it in the box above.</span>
+      <div class="photos">${(m.inspo||[]).map((p,i)=>`<div class="photo"><img src="${esc(fileUrl(p))}" alt="Inspiration"><button class="x" data-action="inspo-remove" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}
+      ${(m.inspo||[]).length<INSPO_MAX?`<label class="addphoto" for="up-inspo">+ Add inspiration<br><span class="small muted">JPG or PNG</span></label><input type="file" accept="image/*" multiple class="sr" id="up-inspo" data-upload="inspo:1">`:''}</div></div>
     <div class="field"><label class="lbl" for="gp-shape">Shape</label><select id="gp-shape">${[['feed','Feed post · 4 × 5'],['square','Square · 1 × 1'],['story','Story or Reel cover · 9 × 16'],['wide','Wide · 16 × 9']].map(([v,l])=>`<option value="${v}" ${m.shape===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <p class="small muted" style="margin:0">Made by OpenAI in a minute or two and added to this post's photos. Check spelling before posting. Each image costs a few cents.</p>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="gfx-post-go" ${V.busy?'disabled':''}>${V.busy?'Starting…':'Generate image'}</button></div>`;
@@ -1513,6 +1528,7 @@ const GFX_DIRECTIONS=[
   {name:'Paper cutout', brief:'Layered paper-cutout illustration with soft shadows; a chunky rounded title cut from paper, in bright but warm colors, centered.'},
   {name:'Watercolor wash', brief:'Loose watercolor washes and hand-drawn ink details; a brush-lettered title in deep color across the middle with lots of white space.'},
 ];
+const INSPO_MAX=3;
 const BRAND_MAX=6; // brand images sent to the image AI with each First Baptist style design
 const FBSS_STYLE_BRIEF='calm, refined and warm; cream or deep slate-blue backgrounds with rust, gold, moss and dusty-blue accents; elegant wide-spaced all-caps serif titles, small spaced all-caps sans subheads, Baskerville-style text; generous space, hairline rules, minimal ornament, faint stained-glass or three-leaf line art; warm natural photography.';
 const GFX_DIRECTIONS_FBSS=[
